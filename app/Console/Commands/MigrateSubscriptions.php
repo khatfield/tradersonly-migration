@@ -37,7 +37,6 @@
          */
         public function handle(SalesforceRepository $salesforceRepository)
         {
-            MigrationDelta::truncate();
             $deltaId = MigrationDelta::getDeltaId();
 
             $time = now();
