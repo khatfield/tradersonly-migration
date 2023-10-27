@@ -46,11 +46,17 @@ class TOPayment extends Model
     protected $connection = "tradersonly";
     protected $table = "payments";
 
+    /**
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo|TOPaymentProfile
+     */
     public function profile()
     {
         return $this->belongsTo(TOPaymentProfile::class, "paymentprofile_id", "id");
     }
 
+    /**
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo|TORefund
+     */
     public function refund()
     {
         return $this->belongsTo(TORefund::class, "id", "payment_id");

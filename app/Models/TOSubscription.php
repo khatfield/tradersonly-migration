@@ -54,21 +54,33 @@ class TOSubscription extends Model
     protected $connection = "tradersonly";
     protected $table = "subscriptions";
 
+    /**
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo|TOUser
+     */
     public function user()
     {
         return $this->belongsTo(TOUser::class, "user_id", "id");
     }
 
+    /**
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo|TOInvoice
+     */
     public function invoice()
     {
         return $this->belongsTo(TOInvoice::class, "invoice_id", "id");
     }
 
+    /**
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo|TORatePlan
+     */
     public function renewalRatePlan()
     {
         return $this->belongsTo(TORatePlan::class, "renewal_plan", "id");
     }
 
+    /**
+     * @return \Illuminate\Database\Eloquent\Relations\BelongsTo|TOAutoRenew
+     */
     public function autoRenew()
     {
         return $this->belongsTo(TOAutoRenew::class, "new_subscription_id", "id");

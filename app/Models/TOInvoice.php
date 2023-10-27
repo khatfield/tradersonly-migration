@@ -44,11 +44,17 @@ class TOInvoice extends Model
     protected $connection = "tradersonly";
     protected $table = "invoices";
 
+    /**
+     * @return \Illuminate\Database\Eloquent\Relations\HasOne|TOPayment
+     */
     public function payment()
     {
         return $this->hasOne(TOPayment::class, "invoice_id", "id");
     }
 
+    /**
+     * @return \Illuminate\Database\Eloquent\Relations\HasOne|TOUser
+     */
     public function orderCreator()
     {
         return $this->hasOne(TOUser::class, "id", "admin_id");

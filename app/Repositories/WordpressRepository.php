@@ -2,6 +2,7 @@
 
     namespace App\Repositories;
 
+    use App\Models\TOSubscription;
     use App\Models\WordpressProduct;
     use Carbon\Carbon;
     use Codexshaper\WooCommerce\Facades\Attribute;
@@ -95,10 +96,14 @@
             return $customer;
         }
 
-        protected function getProduct()
+        public function getProduct($product_id = null)
         {
-            $product = WordpressProduct::first();
-            return !empty($product) ? Product::find($product->product_id) : null;
+            if(is_null($product_id)) {
+                $product = WordpressProduct::first();
+                $product_id = !empty($product) ? $product->product_id : null;
+            }
+
+            return !empty($product_id) ? Product::find($product_id) : null;
         }
 
         protected function createProduct($bar = null)
@@ -299,7 +304,7 @@
                 if (!empty($order["subscription"]->invoice->payment->refund)) {
                     $status = "bulk-refunded";
                     $paid = true;
-                } elseif (!empty($order["subscription"]->invoice->payment->profile->errors)) {
+                } elseif (!empty($order["subscription"]->invoice->payment->profile) && !empty($order["subscription"]->invoice->payment->profile->errors)) {
                     $status = "failed";
                 } elseif (!empty($order["subscription"]->canceled)) {
                     $status = "cancelled";
@@ -513,11 +518,16 @@
             return [$paymentMethod, $paymentMethodTitle, $paymentDetails];
         }
 
+        /**
+         * @param TOSubscription $subscription
+         *
+         * @return string
+         */
         protected function getSubscriptionStatus($subscription)
         {
             $status = self::WP_SUB_ACTIVE;
 
-            if (!empty($subscription->invoice->payment->profile->errors)) {
+            if (!empty($subscription->invoice->payment->profile) && !empty($subscription->invoice->payment->profile->errors)) {
                 $status = self::WP_SUB_FAILED;
             } elseif (!Carbon::parse($subscription->expire_date)->isFuture()) {
                 $status = self::WP_SUB_EXPIRED;
@@ -543,9 +553,9 @@
                 $paymentDetails = [
                     "post_meta" => [
                         '_wc_authorize_net_cim_credit_card_customer_id' =>
-                            $subscription->invoice->payment->profile->pay_profile_id,
+                            $subscription->invoice->payment->profile->pay_profile_id ?? null,
                         '_wc_authorize_net_cim_credit_card_payment_token' =>
-                            $subscription->invoice->payment->profile->auth_id,
+                            $subscription->invoice->payment->profile->auth_id ?? null,
                     ]
                 ];
             }

@@ -18,6 +18,8 @@ use Illuminate\Database\Eloquent\Model;
  * @property string|null $errors
  * @property string $created
  * @property string|null $deleted
+ * @property-read \Illuminate\Database\Eloquent\Collection<int, \App\Models\TOPayment> $payments
+ * @property-read int|null $payments_count
  * @method static \Illuminate\Database\Eloquent\Builder|TOPaymentProfile newModelQuery()
  * @method static \Illuminate\Database\Eloquent\Builder|TOPaymentProfile newQuery()
  * @method static \Illuminate\Database\Eloquent\Builder|TOPaymentProfile query()
@@ -39,4 +41,12 @@ class TOPaymentProfile extends Model
 
     protected $connection = "tradersonly";
     protected $table = "payment_profiles";
+
+    /**
+     * @return \Illuminate\Database\Eloquent\Relations\HasMany|TOPayment
+     */
+    public function payments()
+    {
+        return $this->hasMany(TOPayment::class, "paymentprofile_id", "id");
+    }
 }

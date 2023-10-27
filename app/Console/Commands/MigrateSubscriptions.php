@@ -1,164 +1,179 @@
 <?php
 
-    namespace App\Console\Commands;
+namespace App\Console\Commands;
 
-    use App\Models\MigrationDelta;
-    use App\Models\TOSubscription;
-    use App\Repositories\SalesforceRepository;
-    use App\Repositories\WordpressRepository;
-    use Illuminate\Console\Command;
+use App\Models\LegacyMap;
+use App\Models\MigrationDelta;
+use App\Models\TOSubscription;
+use App\Repositories\SalesforceRepository;
+use App\Repositories\WordpressRepository;
+use Illuminate\Console\Command;
 
-    class MigrateSubscriptions extends Command
+class MigrateSubscriptions extends Command
+{
+    /**
+     * The signature of the command.
+     *
+     * @var string
+     */
+    protected $signature = 'subscriptions:migrate {--d|delta= : Override the starting delta id}';
+
+    /**
+     * The description of the command.
+     *
+     * @var string
+     */
+    protected $description = 'Migrate subscription data from tradersonly to woocommerce/wp';
+
+    public function __construct(WordpressRepository $wordpress)
+    {
+        $this->wordpress = $wordpress;
+        parent::__construct();
+    }
+
+    /**
+     * Execute the console command.
+     *
+     * @return mixed
+     */
+    public function handle(SalesforceRepository $salesforceRepository)
     {
         /**
-         * The signature of the command.
-         *
-         * @var string
+         * Maximum SOQL query length: 10,000 characters.
+         * Accounting for 200 characters in query + 15 characters per sf id,
+         * we can safely chunk in sets of 650.
          */
-        protected $signature = 'subscriptions:migrate';
-
-        /**
-         * The description of the command.
-         *
-         * @var string
-         */
-        protected $description = 'Migrate subscription data from tradersonly to woocommerce/wp';
-
-        public function __construct(WordpressRepository $wordpress)
-        {
-            $this->wordpress = $wordpress;
-            parent::__construct();
+        $chunk_size   = 500;
+        $base_product = 727783;
+        $time         = now();
+        $delta_id     = $this->option('delta');
+        if (empty($delta_id)) {
+            $delta_id = MigrationDelta::getDeltaId();
         }
 
-        /**
-         * Execute the console command.
-         *
-         * @return mixed
-         */
-        public function handle(SalesforceRepository $salesforceRepository)
-        {
-            $deltaId = MigrationDelta::getDeltaId();
+        $wp_product = $this->wordpress->getProduct($base_product);
+        $this->info("Load any existing subscription product variations...");
+        $wp_variations = $this->wordpress->getAllVariations($wp_product["id"]);
 
-            $time = now();
+        $legacy_map = LegacyMap::whereNotNull('legacy_sub')->get()->keyBy('legacy_sub');
 
-            /**
-             * Maximum SOQL query length: 10,000 characters.
-             * Accounting for 200 characters in query + 15 characters per sf id,
-             * we can safely chunk in sets of 650.
-             */
-            $chunk = 500;
+        # get the subscriptions to migrate
+        $to_subscriptions =
+            TOSubscription::with([
+                "user",
+                "renewalRatePlan",
+                "invoice",
+                "autoRenew",
+                "invoice.orderCreator",
+                "invoice.payment",
+                "invoice.payment.profile",
+                "invoice.payment.refund",
+            ])->where("id", ">", $delta_id)
+                          ->whereNull("deleted")
+                          ->where(function($query)
+                          {
+                              // OK if just start date exists, not OK if both blank.
+                              return $query->whereNotNull("start_date")->whereNotNull("expire_date");
+                          })
+                          ->orderBy("id", "ASC");
 
-            $this->info("Configuring subscription product...");
-            $bar = $this->output->createProgressBar(122);
-            $bar->start();
-            $wpProduct = $this->wordpress->firstOrCreateProduct($bar);
-            $bar->finish();
-            $this->newLine();
+        $count = $to_subscriptions->count();
 
-            $this->info("Load any existing subscription product variations...");
-            $wpVariations = $this->wordpress->getAllVariations($wpProduct["id"]);
+        # Notify user & begin progress bar
+        $this->info(sprintf(
+            "Processing %s record(s), starting with subscription #%s",
+            number_format($count), $delta_id == 0 ? 1 : $delta_id
+        ));
+        $this->newLine();
+        $bar = $this->output->createProgressBar($count);
+        $bar->setFormat('very_verbose');
+        $bar->start();
 
-            # get the subscriptions to migrate
-            $toSubscriptions = TOSubscription::with([
-                "user", "renewalRatePlan", "invoice", "autoRenew",
-                "invoice.orderCreator", "invoice.payment",
-                "invoice.payment.profile", "invoice.payment.refund",
-            ])->has("invoice.payment.profile")
-                ->where("id", ">", $deltaId)
-                ->whereNull("deleted")
-                ->where(function ($query) {
-                    // OK if just start date exists, not OK if both blank.
-                    return $query->whereNotNull("start_date")->whereNotNull("expire_date");
-                })
-                ->orderBy("id", "ASC");
+        $to_subscriptions->chunk($chunk_size,
+            function($chunk) use ($salesforceRepository, $wp_product, &$wp_variations, &$delta, &$bar, $legacy_map)
+            {
+                $sf_data = $salesforceRepository->getMigrationData(
+                    $chunk->pluck("user.sf_id")->unique()
+                );
 
-            $count = $toSubscriptions->count();
+                $chunk->each(function($subscription) use ($sf_data, $wp_product, &$wp_variations, &$delta, &$bar, &$data, $legacy_map)
+                {
+                    /** @var TOSubscription $subscription */
 
-            # Notify user & begin progress bar
-            $this->info(sprintf(
-                "Processing %s record(s), starting with subscription #%s",
-                number_format($count), $deltaId == 0 ? 1 : $deltaId
-            ));
-            $this->newLine();
-            $bar = $this->output->createProgressBar($count);
-            $bar->start();
+                    if ($legacy_map->has($subscription->id)) {
+                        //we've already migrated this one ...
+                        $bar->advance();
+                        return;
+                    }
 
-            $toSubscriptions->chunk($chunk,
-                function ($chunk) use ($salesforceRepository, $wpProduct, &$wpVariations, &$delta, &$bar) {
+                    if (empty($subscription->user) ||
+                        empty($subscription->user->sf_id) ||
+                        empty($sf_data[$subscription->user->sf_id])) {
+                        $bar->advance();
+                        return;
+                    }
 
-                    $sfData = $salesforceRepository->getMigrationData(
-                        $chunk->pluck("user.sf_id")->unique()
-                    );
+                    //effectively set to last id ran in chunk
+                    $delta = $subscription->id;
 
-                    $chunk->each(function ($subscription) use ($sfData, $wpProduct, &$wpVariations, &$delta, &$bar, &$data) {
+                    $sfRecord = $sf_data[$subscription->user->sf_id];
 
-                        if (empty($subscription->user) ||
-                            empty($subscription->user->sf_id) ||
-                            empty($sfData[$subscription->user->sf_id])) {
-                            return; //@TODO: log this?
-                        }
+                    $data[$subscription->user->email]["customer"] = [
+                        "subscription" => $subscription,
+                        "sfRecord"     => $sfRecord,
+                    ];
 
-                        //effectively set to last id ran in chunk
-                        $delta = $subscription->id;
+                    $data[$subscription->user->email]["variation"] = [
+                        "term"       => $subscription->initial_term,
+                        "product_id" => $wp_product["id"],
+                        "price"      => $subscription->invoice->amount,
+                    ];
 
-                        $sfRecord = $sfData[$subscription->user->sf_id];
+                    // Generated later, just here so this is less confusing.
+                    $data[$subscription->user->email]["subscriptionVariation"] = [];
 
-                        $data[$subscription->user->email]["customer"] = [
-                            "subscription" => $subscription,
-                            "sfRecord" => $sfRecord
-                        ];
+                    $data[$subscription->user->email]["order"] = [
+                        "subscription" => $subscription,
+                        "sfRecord"     => $sfRecord,
+                        "product"      => $wp_product,
+                        // $wpVariation,
+                        // $wpCustomer
+                    ];
 
-                        $data[$subscription->user->email]["variation"] = [
-                            "term" => $subscription->initial_term,
-                            "product_id" => $wpProduct["id"],
-                            "price" => $subscription->invoice->amount
-                        ];
-
-                        // Generated later, just here so this is less confusing.
-                        $data[$subscription->user->email]["subscriptionVariation"] = [];
-
-                        $data[$subscription->user->email]["order"] = [
-                            "subscription" => $subscription,
-                            "sfRecord" => $sfRecord,
-                            "product" => $wpProduct,
-                            // $wpVariation,
-                            // $wpCustomer
-                        ];
-
-                        $data[$subscription->user->email]["subscription"] = [
-                            "subscription" => $subscription,
-                            // $wpCustomer,
-                            "sfRecord" => $sfRecord,
-                            "product" => $wpProduct,
-                            // $wpVariation,
-                            // $wpOrder
-                        ];
-
-                    });
-
-                    $data = $this->wordpress->findOrCreateCustomers($data);
-
-                    [$data, $wpVariations] = $this->wordpress->findOrCreateProductVariations($data, $wpVariations);
-
-                    $data = $this->wordpress->createOrders($data);
-
-                    $this->wordpress->createSubscriptions($data);
-
-                    MigrationDelta::setDeltaId($delta);
-
-                    $bar->advance(count(array_keys($data)));
+                    $data[$subscription->user->email]["subscription"] = [
+                        "subscription" => $subscription,
+                        // $wpCustomer,
+                        "sfRecord"     => $sfRecord,
+                        "product"      => $wp_product,
+                        // $wpVariation,
+                        // $wpOrder
+                    ];
+                    $bar->advance();
                 });
 
-            $bar->finish();
-            $this->newLine();
+                $data = $this->wordpress->findOrCreateCustomers($data);
 
-            $this->info(sprintf(
-                'Migration has completed in ~%s minutes after finishing subscription w/TO id #%s!',
-                now()->diffInMinutes($time),
-                MigrationDelta::getDeltaId()
-            ));
+                [$data, $wp_variations] = $this->wordpress->findOrCreateProductVariations($data, $wp_variations);
 
-            return 0;
-        }
+                $data = $this->wordpress->createOrders($data);
+
+                $this->wordpress->createSubscriptions($data);
+
+                MigrationDelta::setDeltaId($delta);
+
+                $bar->advance(count(array_keys($data)));
+            });
+
+        $bar->finish();
+        $this->newLine();
+
+        $this->info(sprintf(
+            'Migration has completed in ~%s minutes after finishing subscription w/TO id #%s!',
+            now()->diffInMinutes($time),
+            MigrationDelta::getDeltaId()
+        ));
+
+        return 0;
     }
+}
 
