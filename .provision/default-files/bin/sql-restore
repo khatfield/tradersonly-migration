@@ -1,0 +1,9 @@
+#!/bin/bash
+
+if [ -f $2 ]; then
+    mysql <<EOF
+    USE $1
+    SOURCE $2
+EOF
+
+fi

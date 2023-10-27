@@ -1,0 +1,6 @@
+---
+php_fpm_pool_user: www-data
+php_fpm_pool_group: www-data
+xdebug_path: "/etc/php/{{ php_version }}/mods-available/xdebug.ini"
+fpm_socket: "/run/php/php{{ php_version }}-fpm.sock"
+httpd_service: 'apache2'

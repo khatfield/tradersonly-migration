@@ -1,0 +1,21 @@
+---
+- name: "dev.vagrant-base"
+  src: git+https://bitbucket.org/khatfield/vagrant-base.git
+  version: master
+- name: "dev.vagrant-cleanup"
+  src: git+https://bitbucket.org/khatfield/vagrant-cleanup.git
+  version: master
+- name: "dev.laravel-migrate"
+  src: git+https://bitbucket.org/khatfield/laravel-migrate.git
+  version: master
+- geerlingguy.repo-remi
+- geerlingguy.apache
+- geerlingguy.php
+- geerlingguy.php-versions
+- geerlingguy.apache-php-fpm
+- geerlingguy.mysql
+- geerlingguy.composer
+- geerlingguy.nodejs
+- geerlingguy.redis
+- geerlingguy.php-redis
+- weareinteractive.vim

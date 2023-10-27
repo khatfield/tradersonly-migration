@@ -1,0 +1,9 @@
+---
+php_enablerepo: "remi-php74"
+php_fpm_pool_user: apache
+php_fpm_pool_group: apache
+xdebug_path: "/etc/php.d/15-xdebug.ini"
+fpm_socket: "/var/run/php-fpm/php-fpm.sock"
+mysql_enablerepo: 'MariaDB'
+mysql_pid_file: "/var/lib/mysql/{{ ansible_hostname }}.pid"
+httpd_service: 'httpd'
