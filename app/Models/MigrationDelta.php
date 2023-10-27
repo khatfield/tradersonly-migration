@@ -5,6 +5,23 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
+/**
+ * App\Models\MigrationDelta
+ *
+ * @property int $id
+ * @property int $to_subscription_id
+ * @property \Illuminate\Support\Carbon|null $created_at
+ * @property \Illuminate\Support\Carbon|null $updated_at
+ * @method static \Database\Factories\MigrationDeltaFactory factory(...$parameters)
+ * @method static \Illuminate\Database\Eloquent\Builder|MigrationDelta newModelQuery()
+ * @method static \Illuminate\Database\Eloquent\Builder|MigrationDelta newQuery()
+ * @method static \Illuminate\Database\Eloquent\Builder|MigrationDelta query()
+ * @method static \Illuminate\Database\Eloquent\Builder|MigrationDelta whereCreatedAt($value)
+ * @method static \Illuminate\Database\Eloquent\Builder|MigrationDelta whereId($value)
+ * @method static \Illuminate\Database\Eloquent\Builder|MigrationDelta whereToSubscriptionId($value)
+ * @method static \Illuminate\Database\Eloquent\Builder|MigrationDelta whereUpdatedAt($value)
+ * @mixin \Eloquent
+ */
 class MigrationDelta extends Model
 {
     use HasFactory;
