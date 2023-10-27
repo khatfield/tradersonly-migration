@@ -1,0 +1,21 @@
+---
+- hosts: default
+  remote_user: vagrant
+  become: yes
+  tasks:
+    - name: Ensure git is installed (RedHat).
+      package:
+        name: git
+        state: present
+      when: ansible_os_family|lower == 'redhat'
+
+    - name: Update apt cache (Debian).
+      apt: update_cache=true cache_valid_time=86400
+      when: ansible_os_family|lower == 'debian'
+
+    - name: Ensure git is installed (Debian).
+      apt:
+        name: git
+        state: present
+      when: ansible_os_family|lower == 'debian'
+

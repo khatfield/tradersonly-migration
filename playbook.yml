@@ -1,0 +1,38 @@
+---
+- hosts: default
+  remote_user: vagrant
+  become: yes
+  vars_files:
+    - /etc/ansible/vars/main.yml
+    - /etc/ansible/vars/{{ ansible_os_family|lower }}.yml
+    - /etc/ansible/vars/developer.yml
+  roles:
+    - dev.vagrant-base
+    - role: geerlingguy.repo-remi
+      when: ansible_os_family|lower == 'redhat'
+    - geerlingguy.php-versions
+    - geerlingguy.apache
+    - role: geerlingguy.php
+      vars:
+        - php_fpm_listen: "{{ fpm_socket }}"
+    - geerlingguy.apache-php-fpm
+    - geerlingguy.mysql
+    - geerlingguy.composer
+    - role: weareinteractive.vim
+      when: ansible_os_family|lower == 'redhat'
+    - dev.vagrant-cleanup
+  post_tasks:
+    - name: restore database 1
+      shell: "/home/{{ user_name }}/bin/sql-restore {{ db_name }} {{ db_file }}"
+      args:
+        chdir: "/home/{{ user_name }}/default-files/"
+      become: yes
+      become_user: "{{ user_name }}"
+      when: db_file is defined and db_name is defined
+    - name: restore database 2
+      shell: "/home/{{ user_name }}/bin/sql-restore {{ db2_name }} {{ db2_file }}"
+      args:
+        chdir: "/home/{{ user_name }}/default-files/"
+      become: yes
+      become_user: "{{ user_name }}"
+      when: db2_file is defined and db2_name is defined
