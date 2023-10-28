@@ -301,16 +301,16 @@
                 }
 
                 $paid = false;
+                if(!empty($order["subscription"]->invoice->paid)) {
+                    $paid = true;
+                }
+
                 if (!empty($order["subscription"]->invoice->payment->refund)) {
                     $status = "bulk-refunded";
-                    $paid = true;
-                } elseif (!empty($order["subscription"]->invoice->payment->profile) && !empty($order["subscription"]->invoice->payment->profile->errors)) {
-                    $status = "failed";
                 } elseif (!empty($order["subscription"]->canceled)) {
                     $status = "cancelled";
                 } else {
                     $status = "completed";
-                    $paid = true;
                 }
 
                 $orders[] = [
@@ -527,9 +527,7 @@
         {
             $status = self::WP_SUB_ACTIVE;
 
-            if (!empty($subscription->invoice->payment->profile) && !empty($subscription->invoice->payment->profile->errors)) {
-                $status = self::WP_SUB_FAILED;
-            } elseif (!Carbon::parse($subscription->expire_date)->isFuture()) {
+            if (!Carbon::parse($subscription->expire_date)->isFuture()) {
                 $status = self::WP_SUB_EXPIRED;
             } elseif (!empty($subscription->canceled)) {
                 $status = self::WP_SUB_CANCELLED;

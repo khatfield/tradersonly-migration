@@ -79,6 +79,12 @@ class MigrateSubscriptions extends Command
 
         $count = $to_subscriptions->count();
 
+        $stats = [
+            'skipped' => 0,
+            'no_sf' => 0,
+            'not_paid' => 0,
+            'migrated' => 0,
+        ];
         # Notify user & begin progress bar
         $this->info(sprintf(
             "Processing %s record(s), starting with subscription #%s",
@@ -90,19 +96,20 @@ class MigrateSubscriptions extends Command
         $bar->start();
 
         $to_subscriptions->chunk($chunk_size,
-            function($chunk) use ($salesforceRepository, $wp_product, &$wp_variations, &$delta, &$bar, $legacy_map)
+            function($chunk) use ($salesforceRepository, $wp_product, &$wp_variations, &$delta, &$bar, $legacy_map, &$stats)
             {
                 $sf_data = $salesforceRepository->getMigrationData(
                     $chunk->pluck("user.sf_id")->unique()
                 );
 
-                $chunk->each(function($subscription) use ($sf_data, $wp_product, &$wp_variations, &$delta, &$bar, &$data, $legacy_map)
+                $chunk->each(function($subscription) use ($sf_data, $wp_product, &$wp_variations, &$delta, &$bar, &$data, $legacy_map, &$stats)
                 {
                     /** @var TOSubscription $subscription */
 
                     if ($legacy_map->has($subscription->id)) {
                         //we've already migrated this one ...
                         $bar->advance();
+                        $stats['skipped']++;
                         return;
                     }
 
@@ -110,6 +117,14 @@ class MigrateSubscriptions extends Command
                         empty($subscription->user->sf_id) ||
                         empty($sf_data[$subscription->user->sf_id])) {
                         $bar->advance();
+                        $stats['no_sf']++;
+                        return;
+                    }
+
+                    //only migrate paid subscriptions
+                    if(empty($subscription->invoice->paid)) {
+                        $bar->advance();
+                        $stats['not_paid']++;
                         return;
                     }
 
@@ -148,6 +163,7 @@ class MigrateSubscriptions extends Command
                         // $wpVariation,
                         // $wpOrder
                     ];
+                    $stats['migrated']++;
                     $bar->advance();
                 });
 
@@ -160,19 +176,18 @@ class MigrateSubscriptions extends Command
                 $this->wordpress->createSubscriptions($data);
 
                 MigrationDelta::setDeltaId($delta);
-
-                $bar->advance(count(array_keys($data)));
             });
 
         $bar->finish();
-        $this->newLine();
+        $this->newLine(2);
 
         $this->info(sprintf(
             'Migration has completed in ~%s minutes after finishing subscription w/TO id #%s!',
             now()->diffInMinutes($time),
             MigrationDelta::getDeltaId()
         ));
-
+        $this->output->newLine(2);
+        $this->table(array_keys($stats), [$stats]);
         return 0;
     }
 }
