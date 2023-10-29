@@ -291,8 +291,10 @@
                 $order = $record["order"];
 
                 [$firstName, $lastName] = $this->nameStringSplit($order["sfRecord"]->Name);
-
-                if ($order["subscription"]->invoice->payment->method == "authorize") {
+                if($order['subscription']->invoice->amount == 0) {
+                    $paymentMethod = "authorize_net_cim_credit_card";
+                    $paymentMethodTitle = "Credit Card";
+                } elseif  ($order["subscription"]->invoice->payment->method == "authorize") {
                     $paymentMethod = "authorize_net_cim_credit_card";
                     $paymentMethodTitle = "Credit Card";
                 } else {
