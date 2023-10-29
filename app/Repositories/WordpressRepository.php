@@ -292,8 +292,8 @@
 
                 [$firstName, $lastName] = $this->nameStringSplit($order["sfRecord"]->Name);
                 if($order['subscription']->invoice->amount == 0) {
-                    $paymentMethod = "authorize_net_cim_credit_card";
-                    $paymentMethodTitle = "Credit Card";
+                    $paymentMethod = "comp";
+                    $paymentMethodTitle = "Comp";
                 } elseif  ($order["subscription"]->invoice->payment->method == "authorize") {
                     $paymentMethod = "authorize_net_cim_credit_card";
                     $paymentMethodTitle = "Credit Card";
@@ -307,7 +307,7 @@
                     $paid = true;
                 }
 
-                if (!empty($order["subscription"]->invoice->payment->refund)) {
+                if (!empty($order['subscription']->invoice->payment) && !empty($order["subscription"]->invoice->payment->refund)) {
                     $status = "bulk-refunded";
                 } elseif (!empty($order["subscription"]->canceled)) {
                     $status = "cancelled";
@@ -504,19 +504,27 @@
 
         protected function getPaymentDetails($payment)
         {
-            $paymentMethod = "bacs";
-            $paymentMethodTitle = "Direct bank transfer";
-            $paymentDetails = [];
-            if ($payment->method == "authorize") {
-                $paymentMethod = "authorize_net_cim_credit_card";
-                $paymentMethodTitle = "Credit Card";
-                $paymentDetails = [
-                    "post_meta" => [
-                        '_wc_authorize_net_cim_credit_card_customer_id' => $payment->profile->pay_profile_id ?? null,
-                        '_wc_authorize_net_cim_credit_card_payment_token' => $payment->profile->auth_id ?? null,
-                    ]
-                ];
+
+            if(!is_null($payment)) {
+                $paymentMethod = "bacs";
+                $paymentMethodTitle = "Direct bank transfer";
+                $paymentDetails = [];
+                if ($payment->method == "authorize") {
+                    $paymentMethod = "authorize_net_cim_credit_card";
+                    $paymentMethodTitle = "Credit Card";
+                    $paymentDetails = [
+                        "post_meta" => [
+                            '_wc_authorize_net_cim_credit_card_customer_id' => $payment->profile->pay_profile_id ?? null,
+                            '_wc_authorize_net_cim_credit_card_payment_token' => $payment->profile->auth_id ?? null,
+                        ]
+                    ];
+                }
+            } else {
+                $paymentMethod = "comp";
+                $paymentMethodTitle = "Comp";
+                $paymentDetails = [];
             }
+
             return [$paymentMethod, $paymentMethodTitle, $paymentDetails];
         }
 
