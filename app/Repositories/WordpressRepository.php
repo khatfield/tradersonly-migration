@@ -164,7 +164,7 @@ class WordpressRepository
 
     public function getAllVariations($product_id)
     {
-        $variations = Variation::all($product_id)->mapWithKeys(function($variation)
+        $variations = Variation::all($product_id)->sortBy('date_created')->mapWithKeys(function($variation)
         {
             $v                   = new \StdClass;
             $v->id               = $variation->id;
@@ -183,7 +183,7 @@ class WordpressRepository
         foreach ($data as &$d) {
             // Order Variation
             $d["variation"] = $wpVariations->get(
-                $d["variation"]["term"] . " Month" . '-' . $d["variation"]["price"]
+                $d["variation"]["term"] . "_month" . '-' . $d["variation"]["price"]
             );
 
             /**
@@ -197,7 +197,7 @@ class WordpressRepository
                 !empty($subscription["auto_renew"]) &&
                 !empty($subscription["renewal_plan"])) {
                 $d["subscriptionVariation"] = $wpVariations->get(
-                    $subscription->renewalRatePlan->term . " Month" . '-' .
+                    $subscription->renewalRatePlan->term . "_month" . '-' .
                     $subscription->renewalRatePlan->recurring
                 );
             }
@@ -213,7 +213,7 @@ class WordpressRepository
 
             // Order Variation
             $variation = $record["variation"];
-            $option    = $variation["term"] . " Month";
+            $option    = $variation["term"] . "_month";
             if (!$wpVariations->has($option . '-' . $variation["price"])) {
                 $variations[] = [
                     "product_id"                    => $variation["product_id"],
@@ -235,7 +235,7 @@ class WordpressRepository
                 !empty($subscription["auto_renew"]) &&
                 !empty($subscription["renewal_plan"])) {
                 $price  = $subscription->renewalRatePlan->recurring;
-                $option = $subscription->renewalRatePlan->term . " Month";
+                $option = $subscription->renewalRatePlan->term . "_month";
                 if (!$wpVariations->has($option . '-' . $price)) {
                     $variations[] = [
                         "product_id"                    => $variation["product_id"],
@@ -260,7 +260,7 @@ class WordpressRepository
                 }
 
                 $wpVariations->put(
-                    $return->attribute_option . '-' . $return->regular_price, // i.e., "12 Month-120.00"
+                    $return->attribute_option . '-' . $return->regular_price, // i.e., "12_month-120.00"
                     $return
                 );
             }
