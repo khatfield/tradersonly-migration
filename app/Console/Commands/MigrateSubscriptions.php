@@ -8,6 +8,7 @@ use App\Models\TOSubscription;
 use App\Repositories\SalesforceRepository;
 use App\Repositories\WordpressRepository;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 
 class MigrateSubscriptions extends Command
 {
@@ -43,11 +44,11 @@ class MigrateSubscriptions extends Command
          * Accounting for 200 characters in query + 15 characters per sf id,
          * we can safely chunk in sets of 650.
          */
-        $chunk_size   = 500;
+        $chunk_size   = 400;
         $base_product = 727783;
         $time         = now();
         $delta_id     = $this->option('delta');
-        if (empty($delta_id)) {
+        if (is_null($delta_id)) {
             $delta_id = MigrationDelta::getDeltaId();
         }
 
@@ -69,6 +70,7 @@ class MigrateSubscriptions extends Command
                 "invoice.payment.profile",
                 "invoice.payment.refund",
             ])->where("id", ">", $delta_id)
+                ->where('user_id', '!=', 0)
                           ->whereNull("deleted")
                           ->where(function($query)
                           {
@@ -79,12 +81,6 @@ class MigrateSubscriptions extends Command
 
         $count = $to_subscriptions->count();
 
-        $stats = [
-            'skipped' => 0,
-            'no_sf' => 0,
-            'not_paid' => 0,
-            'migrated' => 0,
-        ];
         # Notify user & begin progress bar
         $this->info(sprintf(
             "Processing %s record(s), starting with subscription #%s",
@@ -95,36 +91,45 @@ class MigrateSubscriptions extends Command
         $bar->setFormat('very_verbose');
         $bar->start();
 
+        $stat_ids = [
+            'migrated' => [],
+            'skipped'  => [],
+            'no_sf'    => [],
+            'not_paid' => [],
+        ];
+
         $to_subscriptions->chunk($chunk_size,
-            function($chunk) use ($salesforceRepository, $wp_product, &$wp_variations, &$delta, &$bar, $legacy_map, &$stats)
+            function($chunk) use ($salesforceRepository, $wp_product, &$wp_variations, &$delta, &$bar, $legacy_map, &$stat_ids)
             {
                 $sf_data = $salesforceRepository->getMigrationData(
                     $chunk->pluck("user.sf_id")->unique()
                 );
 
-                $chunk->each(function($subscription) use ($sf_data, $wp_product, &$wp_variations, &$delta, &$bar, &$data, $legacy_map, &$stats)
+                $chunk->each(function($subscription) use ($sf_data, $wp_product, &$wp_variations, &$delta, &$bar, &$data, $legacy_map, &$stat_ids)
                 {
                     /** @var TOSubscription $subscription */
 
                     if ($legacy_map->has($subscription->id)) {
                         //we've already migrated this one ...
-                        $bar->advance();
-                        $stats['skipped']++;
+                        $stat_ids['skipped'][] = $subscription->id;
+
                         return;
                     }
 
                     if (empty($subscription->user) ||
                         empty($subscription->user->sf_id) ||
                         empty($sf_data[$subscription->user->sf_id])) {
-                        $bar->advance();
-                        $stats['no_sf']++;
+                        $stat_ids['no_sf'][] = $subscription->id;
+                        Log::info('No SF Data for Sub ID: ' . $subscription->id);
+
                         return;
                     }
 
                     //only migrate paid subscriptions
-                    if(empty($subscription->invoice->paid)) {
-                        $bar->advance();
-                        $stats['not_paid']++;
+                    if (empty($subscription->invoice->paid)) {
+                        $stat_ids['not_paid'][] = $subscription->id;
+                        Log::info('No Paid Date for Sub ID: ' . $subscription->id);
+
                         return;
                     }
 
@@ -163,8 +168,7 @@ class MigrateSubscriptions extends Command
                         // $wpVariation,
                         // $wpOrder
                     ];
-                    $stats['migrated']++;
-                    $bar->advance();
+                    $stat_ids['migrated'][]                           = $subscription->id;
                 });
 
                 $data = $this->wordpress->findOrCreateCustomers($data);
@@ -176,6 +180,8 @@ class MigrateSubscriptions extends Command
                 $this->wordpress->createSubscriptions($data);
 
                 MigrationDelta::setDeltaId($delta);
+
+                $bar->advance($chunk->count());
             });
 
         $bar->finish();
@@ -187,7 +193,18 @@ class MigrateSubscriptions extends Command
             MigrationDelta::getDeltaId()
         ));
         $this->output->newLine(2);
+
+        $stats = [];
+        foreach ($stat_ids as $key => $ids) {
+            $stats[$key] = count($ids);
+            if (!empty($ids)) {
+                $filepath = storage_path('app/public/' . $key . '.csv');
+                file_put_contents($filepath, implode("\n", $ids));
+            }
+        }
+
         $this->table(array_keys($stats), [$stats]);
+
         return 0;
     }
 }
