@@ -8,6 +8,7 @@ use App\Models\TOSubscription;
 use App\Repositories\SalesforceRepository;
 use App\Repositories\WordpressRepository;
 use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Log;
 
 class MigrateSubscriptions extends Command
@@ -70,12 +71,13 @@ class MigrateSubscriptions extends Command
                 "invoice.payment.profile",
                 "invoice.payment.refund",
             ])->where("id", ">", $delta_id)
-                ->where('user_id', '!=', 0)
+                          ->where('user_id', '!=', 0)
                           ->whereNull("deleted")
-                          ->where(function($query)
+                          ->whereNotNull('start_date')
+                          ->whereNotNull('expire_date')
+                          ->whereHas('invoice', function(Builder $query)
                           {
-                              // OK if just start date exists, not OK if both blank.
-                              return $query->whereNotNull("start_date")->whereNotNull("expire_date");
+                              $query->whereNotNull('paid');
                           })
                           ->orderBy("id", "ASC");
 
@@ -116,9 +118,12 @@ class MigrateSubscriptions extends Command
                         return;
                     }
 
-                    if (empty($subscription->user) ||
-                        empty($subscription->user->sf_id) ||
-                        empty($sf_data[$subscription->user->sf_id])) {
+                    $sf_id = $subscription->user->sf_id ?? null;
+                    if (!empty($sf_id) && $sf_data->has($sf_id)) {
+                        $sf_record = $sf_data->get($sf_id);
+                    }
+
+                    if (empty($sf_record)) {
                         $stat_ids['no_sf'][] = $subscription->id;
                         Log::info('No SF Data for Sub ID: ' . $subscription->id);
 
@@ -133,14 +138,9 @@ class MigrateSubscriptions extends Command
                         return;
                     }
 
-                    //effectively set to last id ran in chunk
-                    $delta = $subscription->id;
-
-                    $sfRecord = $sf_data[$subscription->user->sf_id];
-
                     $data[$subscription->user->email]["customer"] = [
                         "subscription" => $subscription,
-                        "sfRecord"     => $sfRecord,
+                        "sfRecord"    => $sf_record,
                     ];
 
                     $data[$subscription->user->email]["variation"] = [
@@ -154,7 +154,7 @@ class MigrateSubscriptions extends Command
 
                     $data[$subscription->user->email]["order"] = [
                         "subscription" => $subscription,
-                        "sfRecord"     => $sfRecord,
+                        "sfRecord"    => $sf_record,
                         "product"      => $wp_product,
                         // $wpVariation,
                         // $wpCustomer
@@ -163,12 +163,14 @@ class MigrateSubscriptions extends Command
                     $data[$subscription->user->email]["subscription"] = [
                         "subscription" => $subscription,
                         // $wpCustomer,
-                        "sfRecord"     => $sfRecord,
+                        "sfRecord"    => $sf_record,
                         "product"      => $wp_product,
                         // $wpVariation,
                         // $wpOrder
                     ];
-                    $stat_ids['migrated'][]                           = $subscription->id;
+                    //effectively set to last id ran in chunk
+                    $delta                  = $subscription->id;
+                    $stat_ids['migrated'][] = $subscription->id;
                 });
 
                 $data = $this->wordpress->findOrCreateCustomers($data);
@@ -178,6 +180,7 @@ class MigrateSubscriptions extends Command
                 $data = $this->wordpress->createOrders($data);
 
                 $this->wordpress->createSubscriptions($data);
+
 
                 MigrationDelta::setDeltaId($delta);
 
