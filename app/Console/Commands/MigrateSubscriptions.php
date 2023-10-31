@@ -173,11 +173,13 @@ class MigrateSubscriptions extends Command
                     $stat_ids['migrated'][] = $subscription->id;
                 });
 
-                $data = $this->wordpress->findOrCreateCustomers($data);
+                if(!empty($data)) {
+                    $data = $this->wordpress->findOrCreateCustomers($data);
 
-                $data = $this->wordpress->createOrders($data);
+                    $data = $this->wordpress->createOrders($data);
 
-                $this->wordpress->createSubscriptions($data);
+                    $this->wordpress->createSubscriptions($data);
+                }
 
                 MigrationDelta::setDeltaId($delta);
 
