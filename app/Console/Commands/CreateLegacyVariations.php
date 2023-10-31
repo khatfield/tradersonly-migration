@@ -49,6 +49,7 @@ class CreateLegacyVariations extends Command
         $to_subscriptions =
             TOSubscription::with(['invoice'])
                           ->where('user_id', '!=', 0)
+                          ->whereNull('deleted')
                           ->whereNotNull('start_date')
                           ->whereNotNull('expire_date')
                           ->whereHas('invoice', function(Builder $query)
@@ -94,14 +95,14 @@ class CreateLegacyVariations extends Command
         ];
 
         $this->info('Building Variation Data');
-        $bar = $this->output->createProgressBar($variations->count());
+        $bar            = $this->output->createProgressBar($variations->count());
         $variation_data = [];
         foreach ($variations as $key => $variation) {
             if (!$terms->has($variation->get('slug'))) {
                 try {
                     Term::create($attribute_id, ['name' => $variation->get('name'), 'slug' => $variation->get('slug')]);
                     $terms->put($variation->get('slug'), $variation->get('name'));
-                } catch(\Exception $e) {
+                } catch (\Exception $e) {
                     $this->error('Error Creating Term: ' . $variation->get('slug'));
                     $this->warn($e->getMessage());
                 }
@@ -139,13 +140,13 @@ class CreateLegacyVariations extends Command
         $bar->finish();
         $this->output->newLine(2);
 
-        if(!empty($variation_data)) {
+        if (!empty($variation_data)) {
             $this->info('Creating WP Variations');
             $variation_data = collect($variation_data)->chunk(10);
-            $bar = $this->output->createProgressBar($variation_data->count());
+            $bar            = $this->output->createProgressBar($variation_data->count());
             $bar->setFormat('very_verbose');
             $bar->start();
-            foreach($variation_data as $chunk) {
+            foreach ($variation_data as $chunk) {
                 $request = ['create' => $chunk->toArray()];
                 Variation::batch($product_id, $request);
                 $bar->advance();
