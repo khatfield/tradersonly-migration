@@ -177,24 +177,26 @@ class WordpressRepository
             $result     = Variation::paginate($product_id, $per_page, $page);
             $variations = $variations->merge($result->get('data'));
             $meta       = $result->get('meta');
-            if ($meta['current_page'] == $meta['total_pages']) {
+            if ($meta['current_page'] >= $meta['total_pages']) {
                 $done = true;
             } else {
                 $page = $meta['next_page'];
             }
         }
 
-        $variations = $variations->mapWithKeys(function($variation)
-        {
-            $v                   = new \StdClass;
-            $v->id               = $variation->id;
-            $v->regular_price    = $variation->regular_price;
-            $v->attribute_option = $variation->attributes[0]->option;
+        if($variations->isNotEmpty()) {
+            $variations = $variations->mapWithKeys(function($variation)
+            {
+                $v                   = new \StdClass;
+                $v->id               = $variation->id;
+                $v->regular_price    = $variation->regular_price;
+                $v->attribute_option = $variation->attributes[0]->option;
 
-            return [$v->attribute_option . '-' . $v->regular_price => $v];
-        });
+                return [$v->attribute_option . '-' . $v->regular_price => $v];
+            });
+        }
 
-        return !$variations->isEmpty() ? $variations : collect();
+        return $variations;
     }
 
     public function findOrCreateProductVariations($data, $wpVariations)
@@ -300,7 +302,7 @@ class WordpressRepository
             $result = Term::paginate($attribute_id, $per_page, $page);
             $terms  = $terms->merge($result->get('data'));
             $meta   = $result->get('meta');
-            if ($meta['current_page'] == $meta['total_pages']) {
+            if ($meta['current_page'] >= $meta['total_pages']) {
                 $done = true;
             } else {
                 $page = $meta['next_page'];
