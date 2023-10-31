@@ -100,73 +100,6 @@ class WordpressRepository
         return !empty($product_id) ? Product::find($product_id) : null;
     }
 
-    public function createProductVariation($product_id, $attribute_id, $term, $price)
-    {
-
-    }
-
-    protected function createProduct($bar = null)
-    {
-        $options = [];
-        foreach (range(0, 120) as $option) {
-            $options[] = [
-                'name' => $option . " Month",
-                'slug' => $option . "_month",
-            ];
-        }
-
-        $attribute = Attribute::create([
-            'name' => 'Subscription Term',
-            'slug' => 'subscription_term',
-            'type' => 'select',
-        ]);
-
-        $attributeTerms = collect($options)->map(function($option) use ($attribute, &$bar)
-        {
-            $term = Term::create($attribute["id"], [
-                'name' => $option["name"],
-                'slug' => $option["slug"],
-            ]);
-
-            if ($bar) {
-                $bar->advance();
-            }
-
-            // give the wp api a break...
-            usleep(200000);
-
-            return $term;
-        });
-
-        $product = Product::create([
-            'name'          => 'Traders Only Data Subscription',
-            'slug'          => 'traders-only-data',
-            'type'          => 'variable',
-            'virtual'       => true,
-            'regular_price' => '0.00',
-            'attributes'    => [
-                [
-                    'id'        => $attribute["id"],
-                    'position'  => 0,
-                    'visible'   => true,
-                    'variation' => true,
-                    'options'   => $attributeTerms->pluck("name"),
-                ],
-            ],
-        ]);
-
-        if ($bar) {
-            $bar->advance();
-        }
-
-        WordpressProduct::insert([
-            "product_id"   => $product["id"],
-            "attribute_id" => $attribute["id"],
-        ]);
-
-        return $product;
-    }
-
     public function getAllVariations($product_id)
     {
         $per_page   = 100;
@@ -198,97 +131,6 @@ class WordpressRepository
         }
 
         return $variations;
-    }
-
-    public function setProductVariations($data, $wp_variations)
-    {
-        foreach ($data as &$d) {
-            // Order Variation
-            $d["variation"] = $wp_variations->get(
-                $d["variation"]["term"] . "_month" . '-' . $d["variation"]["price"]
-            );
-
-            /**
-             * Subscription Variation
-             *
-             * WC does not support subscription renews in the future with a different term or price,
-             * To account for this, we need to make sure we have a variation for the sub. we will set.
-             */
-            $subscription = $d["subscription"]["subscription"];
-            if (Carbon::parse($subscription["expire_date"])->isFuture() &&
-                !empty($subscription["auto_renew"]) &&
-                !empty($subscription["renewal_plan"])) {
-                $d["subscriptionVariation"] = $wp_variations->get(
-                    $subscription->renewalRatePlan->term . "_month" . '-' .
-                    intval($subscription->renewalRatePlan->recurring)
-                );
-            }
-        }
-
-        return [$data, $wp_variations];
-    }
-
-    protected function findOrCreateProductVariationsFromSubscriptions($data, $wpVariations)
-    {
-        $variations = [];
-        foreach ($data as $record) {
-
-            // Order Variation
-            $variation = $record["variation"];
-            $option    = $variation["term"] . "_month";
-            if (!$wpVariations->has($option . '-' . $variation["price"])) {
-                $variations[] = [
-                    "product_id"                    => $variation["product_id"],
-                    "_regular_price"                => $variation["price"],
-                    "_subscription_period"          => "month",
-                    "_subscription_period_interval" => $variation["term"],
-                    'attribute_option'              => $option,
-                ];
-            }
-
-            /**
-             * Subscription Variation
-             *
-             * WC does not support subscription renews in the future with a different term or price,
-             * To account for this, we need to make sure we have a variation for the sub. we will set.
-             */
-            $subscription = $record["subscription"]["subscription"];
-            if (Carbon::parse($subscription["expire_date"])->isFuture() &&
-                !empty($subscription["auto_renew"]) &&
-                !empty($subscription["renewal_plan"])) {
-                $price  = $subscription->renewalRatePlan->recurring;
-                $option = $subscription->renewalRatePlan->term . "_month";
-                if (!$wpVariations->has($option . '-' . $price)) {
-                    $variations[] = [
-                        "product_id"                    => $variation["product_id"],
-                        "_regular_price"                => $price,
-                        "_subscription_period"          => "month",
-                        "_subscription_period_interval" => $subscription->renewalRatePlan->term,
-                        'attribute_option'              => $option,
-                    ];
-                }
-            }
-        }
-
-        if (!empty($variations)) {
-
-            $results = self::formatBulkResponse(BulkProductVariation::create(["product-variations" => $variations]));
-            foreach ($results as $result) {
-
-                # getAlLVariations returns objects & this returns an array by default, so conversion is needed.
-                $return = new \StdClass;
-                foreach ($result as $k => $v) {
-                    $return->{$k} = $v;
-                }
-
-                $wpVariations->put(
-                    $return->attribute_option . '-' . $return->regular_price, // i.e., "12_month-120.00"
-                    $return
-                );
-            }
-        }
-
-        return $wpVariations;
     }
 
     public function getAllTerms($attribute_id)
@@ -558,148 +400,300 @@ class WordpressRepository
     }
 
     /******** Unused Methods? *********/
-
-    public function createSubscription($subscription, $wpCustomer, $sfRecord, $wpProduct, $wpVariation, $wpOrder)
-    {
-        [$firstName, $lastName] = $this->nameStringSplit($sfRecord->Name);
-
-        $paymentData = json_decode($subscription->invoice->payment->auth_data, true);
-
-        $paymentMethod  = "bacs";
-        $paymentDetails = [];
-        if ($subscription->invoice->payment->method == "authorize") {
-            $paymentMethod  = "authorize_net_cim_credit_card";
-            $paymentDetails = [
-                "post_meta" => [
-                    '_wc_authorize_net_cim_credit_card_customer_id'   =>
-                        $subscription->invoice->payment->profile->pay_profile_id ?? null,
-                    '_wc_authorize_net_cim_credit_card_payment_token' =>
-                        $subscription->invoice->payment->profile->auth_id ?? null,
-                ],
-            ];
-        }
-
-        $status = "active";
-        if (!empty($paymentData["approved"]) && $paymentData["approved"] != true) {
-            $status = "on-hold";
-        }
-        if (!Carbon::parse($subscription->expire_time)->isFuture()) {
-            $status = "expired";
-        }
-
-
-        return Subscription::create([
-            'parent_id'         => $wpOrder["id"],
-            'customer_id'       => $wpCustomer["id"],
-            'status'            => $status,
-            'billing_period'    => 'month',
-            'billing_interval'  => $subscription->renewal_term,
-            'start_date'        => Carbon::parse($subscription->start_date)->format("Y-m-d h:i:s"),
-            'next_payment_date' => Carbon::parse($subscription->expire_time)->format("Y-m-d h:i:s"),
-            'number'            => "TO-" . $subscription->id,
-            'payment_method'    => $paymentMethod,
-            'payment_details'   => $paymentDetails,
-            'billing'           => [
-                'first_name' => $firstName,
-                'last_name'  => $lastName,
-                'address_1'  => $sfRecord->BillingAddress->street ?? '',
-                'city'       => $sfRecord->BillingAddress->city ?? '',
-                'state'      => $sfRecord->BillingAddress->state ?? '',
-                'postcode'   => $sfRecord->BillingAddress->postalCode ?? '',
-                'country'    => $sfRecord->BillingAddress->country ?? '',
-                'email'      => $subscription->user->email,
-                'phone'      => $sfRecord->Phone ?? '',
-            ],
-            'shipping'          => [
-                'first_name' => $firstName,
-                'last_name'  => $lastName,
-                'address_1'  => $sfRecord->PersonMailingAddress->street ?? '',
-                'city'       => $sfRecord->PersonMailingAddress->city ?? '',
-                'state'      => $sfRecord->PersonMailingAddress->state ?? '',
-                'postcode'   => $sfRecord->PersonMailingAddress->postalCode ?? '',
-                'country'    => $sfRecord->PersonMailingAddress->country ?? '',
-            ],
-            'line_items'        => [
-                [
-                    'product_id'   => $wpProduct['id'],
-                    'variation_id' => $wpVariation->id,
-                    'quantity'     => 1,
-                ],
-            ],
-            'meta_data'         => [
-                [
-                    'key'   => '_migrated_from_tradersonly',
-                    'value' => '1',
-                ],
-            ],
-        ]);
-    }
-
-    public function firstOrCreateProduct($bar = null): ?Collection
-    {
-        $customer = $this->getProduct();
-        if (empty($customer)) {
-            return $this->createProduct($bar);
-        }
-
-        return $customer;
-    }
-
-    public function createOrder($subscription, $sfRecord, $wpProduct, $wpVariation, $wpCustomer)
-    {
-        # Get a first & last out of name string
-        [$firstName, $lastName] = $this->nameStringSplit($sfRecord->Name);
-
-        if ($subscription->invoice->payment->method == "authorize") {
-            $paymentMethod      = "authorize_net_cim_credit_card";
-            $paymentMethodTitle = "Credit Card";
-        } else {
-            $paymentMethod      = "bacs";
-            $paymentMethodTitle = "ACH/Wire/Check";
-        }
-
-        $status = "completed";
-        $paid   = true;
-        if (!empty($paymentData["approved"]) && $paymentData["approved"] != true) {
-            $status = "failed";
-            $paid   = false;
-        }
-
-        return Order::create([
-            'payment_method'       => $paymentMethod,
-            'payment_method_title' => $paymentMethodTitle,
-            'set_paid'             => $paid,
-            'status'               => $status,
-            'customer_id'          => $wpCustomer["id"],
-            'billing'              => [
-                'first_name' => $firstName,
-                'last_name'  => $lastName,
-                'address_1'  => $sfRecord->BillingAddress->street ?? '',
-                'city'       => $sfRecord->BillingAddress->city ?? '',
-                'state'      => $sfRecord->BillingAddress->state ?? '',
-                'postcode'   => $sfRecord->BillingAddress->postalCode ?? '',
-                'country'    => $sfRecord->BillingAddress->country ?? '',
-                'email'      => $subscription->user->email,
-                'phone'      => $sfRecord->Phone ?? '',
-            ],
-            'shipping'             => [
-                'first_name' => $firstName,
-                'last_name'  => $lastName,
-                'address_1'  => $sfRecord->PersonMailingAddress->street ?? '',
-                'city'       => $sfRecord->PersonMailingAddress->city ?? '',
-                'state'      => $sfRecord->PersonMailingAddress->state ?? '',
-                'postcode'   => $sfRecord->PersonMailingAddress->postalCode ?? '',
-                'country'    => $sfRecord->PersonMailingAddress->country ?? '',
-            ],
-            'line_items'           => [
-                [
-                    'product_id'   => $wpProduct['id'],
-                    'variation_id' => $wpVariation->id,
-                    'quantity'     => 1,
-                ],
-            ],
-        ]);
-    }
-
+//
+//    public function setProductVariations($data, $wp_variations)
+//    {
+//        foreach ($data as &$d) {
+//            // Order Variation
+//            $d["variation"] = $wp_variations->get(
+//                $d["variation"]["term"] . "_month" . '-' . $d["variation"]["price"]
+//            );
+//
+//            /**
+//             * Subscription Variation
+//             *
+//             * WC does not support subscription renews in the future with a different term or price,
+//             * To account for this, we need to make sure we have a variation for the sub. we will set.
+//             */
+//            $subscription = $d["subscription"]["subscription"];
+//            if (Carbon::parse($subscription["expire_date"])->isFuture() &&
+//                !empty($subscription["auto_renew"]) &&
+//                !empty($subscription["renewal_plan"])) {
+//                $d["subscriptionVariation"] = $wp_variations->get(
+//                    $subscription->renewalRatePlan->term . "_month" . '-' .
+//                    intval($subscription->renewalRatePlan->recurring)
+//                );
+//            }
+//        }
+//
+//        return [$data, $wp_variations];
+//    }
+//
+//    public function createSubscription($subscription, $wpCustomer, $sfRecord, $wpProduct, $wpVariation, $wpOrder)
+//    {
+//        [$firstName, $lastName] = $this->nameStringSplit($sfRecord->Name);
+//
+//        $paymentData = json_decode($subscription->invoice->payment->auth_data, true);
+//
+//        $paymentMethod  = "bacs";
+//        $paymentDetails = [];
+//        if ($subscription->invoice->payment->method == "authorize") {
+//            $paymentMethod  = "authorize_net_cim_credit_card";
+//            $paymentDetails = [
+//                "post_meta" => [
+//                    '_wc_authorize_net_cim_credit_card_customer_id'   =>
+//                        $subscription->invoice->payment->profile->pay_profile_id ?? null,
+//                    '_wc_authorize_net_cim_credit_card_payment_token' =>
+//                        $subscription->invoice->payment->profile->auth_id ?? null,
+//                ],
+//            ];
+//        }
+//
+//        $status = "active";
+//        if (!empty($paymentData["approved"]) && $paymentData["approved"] != true) {
+//            $status = "on-hold";
+//        }
+//        if (!Carbon::parse($subscription->expire_time)->isFuture()) {
+//            $status = "expired";
+//        }
+//
+//
+//        return Subscription::create([
+//            'parent_id'         => $wpOrder["id"],
+//            'customer_id'       => $wpCustomer["id"],
+//            'status'            => $status,
+//            'billing_period'    => 'month',
+//            'billing_interval'  => $subscription->renewal_term,
+//            'start_date'        => Carbon::parse($subscription->start_date)->format("Y-m-d h:i:s"),
+//            'next_payment_date' => Carbon::parse($subscription->expire_time)->format("Y-m-d h:i:s"),
+//            'number'            => "TO-" . $subscription->id,
+//            'payment_method'    => $paymentMethod,
+//            'payment_details'   => $paymentDetails,
+//            'billing'           => [
+//                'first_name' => $firstName,
+//                'last_name'  => $lastName,
+//                'address_1'  => $sfRecord->BillingAddress->street ?? '',
+//                'city'       => $sfRecord->BillingAddress->city ?? '',
+//                'state'      => $sfRecord->BillingAddress->state ?? '',
+//                'postcode'   => $sfRecord->BillingAddress->postalCode ?? '',
+//                'country'    => $sfRecord->BillingAddress->country ?? '',
+//                'email'      => $subscription->user->email,
+//                'phone'      => $sfRecord->Phone ?? '',
+//            ],
+//            'shipping'          => [
+//                'first_name' => $firstName,
+//                'last_name'  => $lastName,
+//                'address_1'  => $sfRecord->PersonMailingAddress->street ?? '',
+//                'city'       => $sfRecord->PersonMailingAddress->city ?? '',
+//                'state'      => $sfRecord->PersonMailingAddress->state ?? '',
+//                'postcode'   => $sfRecord->PersonMailingAddress->postalCode ?? '',
+//                'country'    => $sfRecord->PersonMailingAddress->country ?? '',
+//            ],
+//            'line_items'        => [
+//                [
+//                    'product_id'   => $wpProduct['id'],
+//                    'variation_id' => $wpVariation->id,
+//                    'quantity'     => 1,
+//                ],
+//            ],
+//            'meta_data'         => [
+//                [
+//                    'key'   => '_migrated_from_tradersonly',
+//                    'value' => '1',
+//                ],
+//            ],
+//        ]);
+//    }
+//
+//    public function firstOrCreateProduct($bar = null): ?Collection
+//    {
+//        $customer = $this->getProduct();
+//        if (empty($customer)) {
+//            return $this->createProduct($bar);
+//        }
+//
+//        return $customer;
+//    }
+//
+//    protected function createProduct($bar = null)
+//    {
+//        $options = [];
+//        foreach (range(0, 120) as $option) {
+//            $options[] = [
+//                'name' => $option . " Month",
+//                'slug' => $option . "_month",
+//            ];
+//        }
+//
+//        $attribute = Attribute::create([
+//            'name' => 'Subscription Term',
+//            'slug' => 'subscription_term',
+//            'type' => 'select',
+//        ]);
+//
+//        $attributeTerms = collect($options)->map(function($option) use ($attribute, &$bar)
+//        {
+//            $term = Term::create($attribute["id"], [
+//                'name' => $option["name"],
+//                'slug' => $option["slug"],
+//            ]);
+//
+//            if ($bar) {
+//                $bar->advance();
+//            }
+//
+//            // give the wp api a break...
+//            usleep(200000);
+//
+//            return $term;
+//        });
+//
+//        $product = Product::create([
+//            'name'          => 'Traders Only Data Subscription',
+//            'slug'          => 'traders-only-data',
+//            'type'          => 'variable',
+//            'virtual'       => true,
+//            'regular_price' => '0.00',
+//            'attributes'    => [
+//                [
+//                    'id'        => $attribute["id"],
+//                    'position'  => 0,
+//                    'visible'   => true,
+//                    'variation' => true,
+//                    'options'   => $attributeTerms->pluck("name"),
+//                ],
+//            ],
+//        ]);
+//
+//        if ($bar) {
+//            $bar->advance();
+//        }
+//
+//        WordpressProduct::insert([
+//            "product_id"   => $product["id"],
+//            "attribute_id" => $attribute["id"],
+//        ]);
+//
+//        return $product;
+//    }
+//
+//    public function createOrder($subscription, $sfRecord, $wpProduct, $wpVariation, $wpCustomer)
+//    {
+//        # Get a first & last out of name string
+//        [$firstName, $lastName] = $this->nameStringSplit($sfRecord->Name);
+//
+//        if ($subscription->invoice->payment->method == "authorize") {
+//            $paymentMethod      = "authorize_net_cim_credit_card";
+//            $paymentMethodTitle = "Credit Card";
+//        } else {
+//            $paymentMethod      = "bacs";
+//            $paymentMethodTitle = "ACH/Wire/Check";
+//        }
+//
+//        $status = "completed";
+//        $paid   = true;
+//        if (!empty($paymentData["approved"]) && $paymentData["approved"] != true) {
+//            $status = "failed";
+//            $paid   = false;
+//        }
+//
+//        return Order::create([
+//            'payment_method'       => $paymentMethod,
+//            'payment_method_title' => $paymentMethodTitle,
+//            'set_paid'             => $paid,
+//            'status'               => $status,
+//            'customer_id'          => $wpCustomer["id"],
+//            'billing'              => [
+//                'first_name' => $firstName,
+//                'last_name'  => $lastName,
+//                'address_1'  => $sfRecord->BillingAddress->street ?? '',
+//                'city'       => $sfRecord->BillingAddress->city ?? '',
+//                'state'      => $sfRecord->BillingAddress->state ?? '',
+//                'postcode'   => $sfRecord->BillingAddress->postalCode ?? '',
+//                'country'    => $sfRecord->BillingAddress->country ?? '',
+//                'email'      => $subscription->user->email,
+//                'phone'      => $sfRecord->Phone ?? '',
+//            ],
+//            'shipping'             => [
+//                'first_name' => $firstName,
+//                'last_name'  => $lastName,
+//                'address_1'  => $sfRecord->PersonMailingAddress->street ?? '',
+//                'city'       => $sfRecord->PersonMailingAddress->city ?? '',
+//                'state'      => $sfRecord->PersonMailingAddress->state ?? '',
+//                'postcode'   => $sfRecord->PersonMailingAddress->postalCode ?? '',
+//                'country'    => $sfRecord->PersonMailingAddress->country ?? '',
+//            ],
+//            'line_items'           => [
+//                [
+//                    'product_id'   => $wpProduct['id'],
+//                    'variation_id' => $wpVariation->id,
+//                    'quantity'     => 1,
+//                ],
+//            ],
+//        ]);
+//    }
+//
+//    protected function findOrCreateProductVariationsFromSubscriptions($data, $wpVariations)
+//    {
+//        $variations = [];
+//        foreach ($data as $record) {
+//
+//            // Order Variation
+//            $variation = $record["variation"];
+//            $option    = $variation["term"] . "_month";
+//            if (!$wpVariations->has($option . '-' . $variation["price"])) {
+//                $variations[] = [
+//                    "product_id"                    => $variation["product_id"],
+//                    "_regular_price"                => $variation["price"],
+//                    "_subscription_period"          => "month",
+//                    "_subscription_period_interval" => $variation["term"],
+//                    'attribute_option'              => $option,
+//                ];
+//            }
+//
+//            /**
+//             * Subscription Variation
+//             *
+//             * WC does not support subscription renews in the future with a different term or price,
+//             * To account for this, we need to make sure we have a variation for the sub. we will set.
+//             */
+//            $subscription = $record["subscription"]["subscription"];
+//            if (Carbon::parse($subscription["expire_date"])->isFuture() &&
+//                !empty($subscription["auto_renew"]) &&
+//                !empty($subscription["renewal_plan"])) {
+//                $price  = $subscription->renewalRatePlan->recurring;
+//                $option = $subscription->renewalRatePlan->term . "_month";
+//                if (!$wpVariations->has($option . '-' . $price)) {
+//                    $variations[] = [
+//                        "product_id"                    => $variation["product_id"],
+//                        "_regular_price"                => $price,
+//                        "_subscription_period"          => "month",
+//                        "_subscription_period_interval" => $subscription->renewalRatePlan->term,
+//                        'attribute_option'              => $option,
+//                    ];
+//                }
+//            }
+//        }
+//
+//        if (!empty($variations)) {
+//
+//            $results = self::formatBulkResponse(BulkProductVariation::create(["product-variations" => $variations]));
+//            foreach ($results as $result) {
+//
+//                # getAlLVariations returns objects & this returns an array by default, so conversion is needed.
+//                $return = new \StdClass;
+//                foreach ($result as $k => $v) {
+//                    $return->{$k} = $v;
+//                }
+//
+//                $wpVariations->put(
+//                    $return->attribute_option . '-' . $return->regular_price, // i.e., "12_month-120.00"
+//                    $return
+//                );
+//            }
+//        }
+//
+//        return $wpVariations;
+//    }
 
 }
