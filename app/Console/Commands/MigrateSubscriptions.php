@@ -53,9 +53,11 @@ class MigrateSubscriptions extends Command
             $delta_id = MigrationDelta::getDeltaId();
         }
 
+        $this->call('variations:create');
+
         $wp_product = $this->wordpress->getProduct($base_product);
         $this->info("Load any existing subscription product variations...");
-        $wp_variations = $this->wordpress->getAllVariations($wp_product["id"]);
+        $wp_variations = $this->wordpress->getAllVariations($base_product);
 
         $legacy_map = LegacyMap::whereNotNull('legacy_sub')->get()->keyBy('legacy_sub');
 

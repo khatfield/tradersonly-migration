@@ -100,6 +100,11 @@ class WordpressRepository
         return !empty($product_id) ? Product::find($product_id) : null;
     }
 
+    public function createProductVariation($product_id, $attribute_id, $term, $price)
+    {
+
+    }
+
     protected function createProduct($bar = null)
     {
         $options = [];
@@ -164,7 +169,22 @@ class WordpressRepository
 
     public function getAllVariations($product_id)
     {
-        $variations = Variation::all($product_id)->sortBy('date_created')->mapWithKeys(function($variation)
+        $per_page   = 100;
+        $page       = 1;
+        $variations = collect();
+        $done       = false;
+        while (!$done) {
+            $result     = Variation::paginate($product_id, $per_page, $page);
+            $variations = $variations->merge($result->get('data'));
+            $meta       = $result->get('meta');
+            if ($meta['current_page'] == $meta['total_pages']) {
+                $done = true;
+            } else {
+                $page = $meta['next_page'];
+            }
+        }
+
+        $variations = $variations->mapWithKeys(function($variation)
         {
             $v                   = new \StdClass;
             $v->id               = $variation->id;
@@ -269,6 +289,27 @@ class WordpressRepository
         return $wpVariations;
     }
 
+    public function getAllTerms($attribute_id)
+    {
+        $page     = 1;
+        $per_page = 100;
+
+        $done  = false;
+        $terms = collect();
+        while (!$done) {
+            $result = Term::paginate($attribute_id, $per_page, $page);
+            $terms  = $terms->merge($result->get('data'));
+            $meta   = $result->get('meta');
+            if ($meta['current_page'] == $meta['total_pages']) {
+                $done = true;
+            } else {
+                $page = $meta['next_page'];
+            }
+        }
+
+        return $terms;
+    }
+
     public function createOrders($data)
     {
         $response  = $this->createOrdersFromSubscriptions($data);
@@ -302,10 +343,10 @@ class WordpressRepository
                 $paymentMethodTitle = "ACH/Wire/Check";
             }
 
-            $paid = false;
+            $paid      = false;
             $paid_date = null;
             if (!empty($order["subscription"]->invoice->paid)) {
-                $paid = true;
+                $paid      = true;
                 $paid_date = $order["subscription"]->invoice->paid;
             }
 
@@ -419,7 +460,7 @@ class WordpressRepository
                 'order_total'          => $orderTotal,
                 'payment_details'      => $paymentDetails,
 
-                'billing'              => [
+                'billing'    => [
                     'first_name' => $firstName,
                     'last_name'  => $lastName,
                     'address_1'  => $subscription["sfRecord"]->BillingAddress->street ?? '',
@@ -430,7 +471,7 @@ class WordpressRepository
                     'email'      => $email,
                     'phone'      => $subscription["sfRecord"]->Phone ?? '',
                 ],
-                'shipping'             => [
+                'shipping'   => [
                     'first_name' => $firstName,
                     'last_name'  => $lastName,
                     'address_1'  => $subscription["sfRecord"]->PersonMailingAddress->street ?? '',
@@ -439,19 +480,19 @@ class WordpressRepository
                     'postcode'   => $subscription["sfRecord"]->PersonMailingAddress->postalCode ?? '',
                     'country'    => $subscription["sfRecord"]->PersonMailingAddress->country ?? '',
                 ],
-                'line_items'           => [
+                'line_items' => [
                     [
                         'product_id'   => $subscription["product"]['id'],
                         'variation_id' => $productVariationId,
                         'quantity'     => 1,
                     ],
                 ],
-                'meta_data' => [
+                'meta_data'  => [
                     [
-                        'key' => '_legacy_sub_id',
+                        'key'   => '_legacy_sub_id',
                         'value' => $subscription["subscription"]->id,
-                    ]
-                ]
+                    ],
+                ],
             ];
         }
 
@@ -515,7 +556,7 @@ class WordpressRepository
     }
 
     /******** Unused Methods? *********/
-    /*
+
     public function createSubscription($subscription, $wpCustomer, $sfRecord, $wpProduct, $wpVariation, $wpOrder)
     {
         [$firstName, $lastName] = $this->nameStringSplit($sfRecord->Name);
@@ -543,7 +584,6 @@ class WordpressRepository
         if (!Carbon::parse($subscription->expire_time)->isFuture()) {
             $status = "expired";
         }
-
 
 
         return Subscription::create([
@@ -667,6 +707,5 @@ class WordpressRepository
         ]);
     }
 
-    */
 
 }
