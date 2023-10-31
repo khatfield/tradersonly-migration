@@ -199,12 +199,11 @@ class WordpressRepository
         return $variations;
     }
 
-    public function findOrCreateProductVariations($data, $wpVariations)
+    public function setProductVariations($data, $wp_variations)
     {
-        $wpVariations = self::findOrCreateProductVariationsFromSubscriptions($data, $wpVariations);
         foreach ($data as &$d) {
             // Order Variation
-            $d["variation"] = $wpVariations->get(
+            $d["variation"] = $wp_variations->get(
                 $d["variation"]["term"] . "_month" . '-' . $d["variation"]["price"]
             );
 
@@ -218,14 +217,14 @@ class WordpressRepository
             if (Carbon::parse($subscription["expire_date"])->isFuture() &&
                 !empty($subscription["auto_renew"]) &&
                 !empty($subscription["renewal_plan"])) {
-                $d["subscriptionVariation"] = $wpVariations->get(
+                $d["subscriptionVariation"] = $wp_variations->get(
                     $subscription->renewalRatePlan->term . "_month" . '-' .
-                    $subscription->renewalRatePlan->recurring
+                    intval($subscription->renewalRatePlan->recurring)
                 );
             }
         }
 
-        return [$data, $wpVariations];
+        return [$data, $wp_variations];
     }
 
     protected function findOrCreateProductVariationsFromSubscriptions($data, $wpVariations)

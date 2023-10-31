@@ -148,7 +148,7 @@ class MigrateSubscriptions extends Command
                     $data[$subscription->user->email]["variation"] = [
                         "term"       => $subscription->initial_term,
                         "product_id" => $wp_product["id"],
-                        "price"      => $subscription->invoice->amount,
+                        "price"      => intval($subscription->invoice->amount),
                     ];
 
                     // Generated later, just here so this is less confusing.
@@ -177,7 +177,7 @@ class MigrateSubscriptions extends Command
 
                 $data = $this->wordpress->findOrCreateCustomers($data);
 
-                [$data, $wp_variations] = $this->wordpress->findOrCreateProductVariations($data, $wp_variations);
+                [$data, $wp_variations] = $this->wordpress->setProductVariations($data, $wp_variations);
 
                 $data = $this->wordpress->createOrders($data);
 
