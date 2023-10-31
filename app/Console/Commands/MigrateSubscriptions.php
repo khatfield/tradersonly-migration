@@ -75,6 +75,7 @@ class MigrateSubscriptions extends Command
                 "invoice.payment.refund",
             ])->where("id", ">", $delta_id)
                           ->where('user_id', '!=', 0)
+                          ->whereNull('deleted')
                           ->whereHas('user')
                           ->whereNotNull('start_date')
                           ->whereNotNull('expire_date')
@@ -150,7 +151,7 @@ class MigrateSubscriptions extends Command
                         $subscription->auto_renew &&
                         !empty($subscription->renewal_plan)) {
                         $key = $subscription->renewalRatePlan->term . '_month-' . intval($subscription->renewalRatePlan->recurring);
-                        if($wp_variations->has($key)) {
+                        if ($wp_variations->has($key)) {
                             $data[$email]["subscriptionVariation"] = $wp_variations->get($key);
                         }
                     }
