@@ -75,7 +75,7 @@ class MigrateSubscriptions extends Command
                 "invoice.payment.refund",
             ])->where("id", ">", $delta_id)
                           ->where('user_id', '!=', 0)
-                          ->whereNull("deleted")
+                          ->whereHas('user')
                           ->whereNotNull('start_date')
                           ->whereNotNull('expire_date')
                           ->whereHas('invoice', function(Builder $query)
@@ -122,7 +122,8 @@ class MigrateSubscriptions extends Command
                         return;
                     }
 
-                    $sf_id = $subscription->user->sf_id ?? null;
+                    $sf_id     = $subscription->user->sf_id ?? null;
+                    $sf_record = null;
                     if (!empty($sf_id) && $sf_data->has($sf_id)) {
                         $sf_record = $sf_data->get($sf_id);
                     }
@@ -133,15 +134,6 @@ class MigrateSubscriptions extends Command
 
                         return;
                     }
-
-                    //only migrate paid subscriptions
-                    if (empty($subscription->invoice->paid)) {
-                        $stat_ids['not_paid'][] = $subscription->id;
-                        Log::info('No Paid Date for Sub ID: ' . $subscription->id);
-
-                        return;
-                    }
-
 
                     $data[$email]["customer"] = [
                         "subscription" => $subscription,
