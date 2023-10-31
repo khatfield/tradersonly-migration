@@ -151,9 +151,7 @@ class MigrateSubscriptions extends Command
                     //get the variation
                     $key = $subscription->initial_term . '_month-' . intval($subscription->invoice->amount);
                     if ($wp_variations->has($key)) {
-                        $data[$email]["variation"] = $wp_variations->get('key');
-                    } else {
-                        throw new \Exception('Unable to find Variation for ' . $key);
+                        $data[$email]["variation"] = $wp_variations->get($key);
                     }
 
                     if (Carbon::parse($subscription->expire_date)->isFuture() &&
@@ -162,8 +160,6 @@ class MigrateSubscriptions extends Command
                         $key = $subscription->renewalRatePlan->term . '_month-' . intval($subscription->renewalRatePlan->recurring);
                         if($wp_variations->has($key)) {
                             $data[$email]["subscriptionVariation"] = $wp_variations->get($key);
-                        } else {
-                            throw new \Exception('Unable to find Variation for ' . $key);
                         }
                     }
 
