@@ -187,10 +187,11 @@ class WordpressRepository
         if($variations->isNotEmpty()) {
             $variations = $variations->mapWithKeys(function($variation)
             {
+                $option              = strtolower(str_replace(' ', '_', $variation->attributes[0]->option));
                 $v                   = new \StdClass;
                 $v->id               = $variation->id;
                 $v->regular_price    = $variation->regular_price;
-                $v->attribute_option = $variation->attributes[0]->option;
+                $v->attribute_option = $option;
 
                 return [$v->attribute_option . '-' . $v->regular_price => $v];
             });
@@ -632,14 +633,6 @@ class WordpressRepository
                 ],
             ],
         ]);
-    }
-
-    public function modifyOrderDate($wpOrder, $subscription)
-    {
-        return OrderDate::update(
-            $wpOrder["id"],
-            Carbon::parse($subscription->start_date)->timestamp
-        );
     }
 
     public function firstOrCreateProduct($bar = null): ?Collection

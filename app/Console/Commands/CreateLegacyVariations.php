@@ -116,7 +116,6 @@ class CreateLegacyVariations extends Command
                     'attributes'    => [
                         [
                             'id'     => $attribute_id,
-                            'name'   => $variation->get('name'),
                             'option' => $variation->get('slug'),
                         ],
                     ],

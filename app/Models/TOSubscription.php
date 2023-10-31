@@ -8,25 +8,25 @@ use Illuminate\Database\Eloquent\Model;
 /**
  * App\Models\TOSubscription
  *
- * @property int $id
- * @property int|null $version
- * @property int $user_id
- * @property int $invoice_id
- * @property int $initial_term
- * @property int $renewal_term
- * @property int|null $renewal_plan
- * @property string|null $start_date
- * @property string|null $expire_date
- * @property int $auto_renew
- * @property int $mobile
- * @property string|null $mobile_details
- * @property string $created
- * @property string|null $canceled
- * @property string|null $deleted
+ * @property int                               $id
+ * @property int|null                          $version
+ * @property int                               $user_id
+ * @property int                               $invoice_id
+ * @property int                               $initial_term
+ * @property int                               $renewal_term
+ * @property int|null                          $renewal_plan
+ * @property string|null                       $start_date
+ * @property string|null                       $expire_date
+ * @property bool                              $auto_renew
+ * @property bool                              $mobile
+ * @property string|null                       $mobile_details
+ * @property string                            $created
+ * @property string|null                       $canceled
+ * @property string|null                       $deleted
  * @property-read \App\Models\TOAutoRenew|null $autoRenew
- * @property-read \App\Models\TOInvoice|null $invoice
- * @property-read \App\Models\TORatePlan|null $renewalRatePlan
- * @property-read \App\Models\TOUser|null $user
+ * @property-read \App\Models\TOInvoice|null   $invoice
+ * @property-read \App\Models\TORatePlan|null  $renewalRatePlan
+ * @property-read \App\Models\TOUser|null      $user
  * @method static \Illuminate\Database\Eloquent\Builder|TOSubscription newModelQuery()
  * @method static \Illuminate\Database\Eloquent\Builder|TOSubscription newQuery()
  * @method static \Illuminate\Database\Eloquent\Builder|TOSubscription query()
@@ -52,7 +52,12 @@ class TOSubscription extends Model
     use HasFactory;
 
     protected $connection = "tradersonly";
-    protected $table = "subscriptions";
+    protected $table      = "subscriptions";
+
+    protected $casts = [
+        'auto_renew' => 'boolean',
+        'mobile'     => 'boolean',
+    ];
 
     /**
      * @return \Illuminate\Database\Eloquent\Relations\BelongsTo|TOUser

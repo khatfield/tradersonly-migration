@@ -7,6 +7,7 @@ use App\Models\MigrationDelta;
 use App\Models\TOSubscription;
 use App\Repositories\SalesforceRepository;
 use App\Repositories\WordpressRepository;
+use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Log;
@@ -53,13 +54,13 @@ class MigrateSubscriptions extends Command
             $delta_id = MigrationDelta::getDeltaId();
         }
 
+        $this->warn('Checking Terms and Variations');
         $this->call('variations:create');
 
-        $wp_product = $this->wordpress->getProduct($base_product);
         $this->info("Load any existing subscription product variations...");
+        $wp_product    = $this->wordpress->getProduct($base_product);
         $wp_variations = $this->wordpress->getAllVariations($base_product);
-
-        $legacy_map = LegacyMap::whereNotNull('legacy_sub')->get()->keyBy('legacy_sub');
+        $legacy_map    = LegacyMap::whereNotNull('legacy_sub')->get()->keyBy('legacy_sub');
 
         # get the subscriptions to migrate
         $to_subscriptions =
@@ -112,6 +113,7 @@ class MigrateSubscriptions extends Command
                 $chunk->each(function($subscription) use ($sf_data, $wp_product, &$wp_variations, &$delta, &$bar, &$data, $legacy_map, &$stat_ids)
                 {
                     /** @var TOSubscription $subscription */
+                    $email = $subscription->user->email;
 
                     if ($legacy_map->has($subscription->id)) {
                         //we've already migrated this one ...
@@ -140,36 +142,39 @@ class MigrateSubscriptions extends Command
                         return;
                     }
 
-                    $data[$subscription->user->email]["customer"] = [
+
+                    $data[$email]["customer"] = [
                         "subscription" => $subscription,
-                        "sfRecord"    => $sf_record,
+                        "sfRecord"     => $sf_record,
                     ];
 
-                    $data[$subscription->user->email]["variation"] = [
-                        "term"       => $subscription->initial_term,
-                        "product_id" => $wp_product["id"],
-                        "price"      => intval($subscription->invoice->amount),
-                    ];
+                    //get the variation
+                    $key = $subscription->initial_term . '_month-' . intval($subscription->invoice->amount);
+                    if ($wp_variations->has($key)) {
+                        $data[$email]["variation"] = $wp_variations->get('key');
+                    }
 
-                    // Generated later, just here so this is less confusing.
-                    $data[$subscription->user->email]["subscriptionVariation"] = [];
+                    if (Carbon::parse($subscription->expire_date)->isFuture() &&
+                        $subscription->auto_renew &&
+                        !empty($subscription->renewal_plan)) {
+                        $key = $subscription->renewalRatePlan->term . '_month-' . intval($subscription->renewalRatePlan->recurring);
+                        if($wp_variations->has($key)) {
+                            $data[$email]["subscriptionVariation"] = $wp_variations->get($key);
+                        }
+                    }
 
-                    $data[$subscription->user->email]["order"] = [
+                    $data[$email]["order"] = [
                         "subscription" => $subscription,
-                        "sfRecord"    => $sf_record,
+                        "sfRecord"     => $sf_record,
                         "product"      => $wp_product,
-                        // $wpVariation,
-                        // $wpCustomer
                     ];
 
-                    $data[$subscription->user->email]["subscription"] = [
+                    $data[$email]["subscription"] = [
                         "subscription" => $subscription,
-                        // $wpCustomer,
-                        "sfRecord"    => $sf_record,
+                        "sfRecord"     => $sf_record,
                         "product"      => $wp_product,
-                        // $wpVariation,
-                        // $wpOrder
                     ];
+
                     //effectively set to last id ran in chunk
                     $delta                  = $subscription->id;
                     $stat_ids['migrated'][] = $subscription->id;
@@ -177,12 +182,9 @@ class MigrateSubscriptions extends Command
 
                 $data = $this->wordpress->findOrCreateCustomers($data);
 
-                [$data, $wp_variations] = $this->wordpress->setProductVariations($data, $wp_variations);
-
                 $data = $this->wordpress->createOrders($data);
 
                 $this->wordpress->createSubscriptions($data);
-
 
                 MigrationDelta::setDeltaId($delta);
 
