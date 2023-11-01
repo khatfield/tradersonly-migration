@@ -114,6 +114,7 @@ class MigrateSubscriptions extends Command
                 $chunk->each(function($subscription) use ($sf_data, $wp_product, &$wp_variations, &$delta, &$bar, &$data, $legacy_map, &$stat_ids)
                 {
                     /** @var TOSubscription $subscription */
+                    $delta = $subscription->id;
                     $email = $subscription->user->email;
 
                     if ($legacy_map->has($subscription->id)) {
@@ -169,11 +170,11 @@ class MigrateSubscriptions extends Command
                     ];
 
                     //effectively set to last id ran in chunk
-                    $delta                  = $subscription->id;
+
                     $stat_ids['migrated'][] = $subscription->id;
                 });
 
-                if(!empty($data)) {
+                if (!empty($data)) {
                     $data = $this->wordpress->findOrCreateCustomers($data);
 
                     $data = $this->wordpress->createOrders($data);
