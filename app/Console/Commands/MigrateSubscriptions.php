@@ -20,7 +20,8 @@ class MigrateSubscriptions extends Command
      * @var string
      */
     protected $signature = 'subscriptions:migrate {--d|delta= : Override the starting delta id}
-                                                  {--t|terms : Update products and terms}';
+                                                  {--t|terms : Update products and terms}
+                                                  {--m|missing : Find and process missing}';
 
     /**
      * The description of the command.
@@ -50,16 +51,23 @@ class MigrateSubscriptions extends Command
         $chunk_size   = 400;
         $base_product = 727783;
         $time         = now();
+        $missing_only = $this->option('missing');
         $terms        = $this->option('terms');
         $delta_id     = $this->option('delta');
         if (is_null($delta_id)) {
-            $delta_id = MigrationDelta::getDeltaId();
+            if($missing_only) {
+                $delta_id = 0;
+            } else {
+                $delta_id = MigrationDelta::getDeltaId();
+            }
         }
 
         if ($terms) {
             $this->warn('Checking Terms and Variations');
             $this->call('variations:create');
         }
+
+
 
         $this->info("Loading Existing Products and Variations");
         $wp_product    = $this->wordpress->getProduct($base_product);
@@ -88,6 +96,23 @@ class MigrateSubscriptions extends Command
                               $query->whereNotNull('paid');
                           })
                           ->orderBy("id", "ASC");
+
+        if($missing_only) {
+            $migrated_ids = $legacy_map->keys();
+            $legacy_ids   = $to_subscriptions->select('id')->get()->pluck('id');
+
+            $missed = $legacy_ids->diff($migrated_ids);
+            $to_subscriptions = TOSubscription::with([
+                "user",
+                "renewalRatePlan",
+                "invoice",
+                "autoRenew",
+                "invoice.orderCreator",
+                "invoice.payment",
+                "invoice.payment.profile",
+                "invoice.payment.refund",
+            ])->whereIn('id', $missed->toArray());
+        }
 
         $count = $to_subscriptions->count();
 
