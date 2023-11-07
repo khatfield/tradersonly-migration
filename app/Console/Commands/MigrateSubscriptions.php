@@ -19,7 +19,8 @@ class MigrateSubscriptions extends Command
      *
      * @var string
      */
-    protected $signature = 'subscriptions:migrate {--d|delta= : Override the starting delta id}';
+    protected $signature = 'subscriptions:migrate {--d|delta= : Override the starting delta id}
+                                                  {--t|terms : Update products and terms}';
 
     /**
      * The description of the command.
@@ -49,15 +50,18 @@ class MigrateSubscriptions extends Command
         $chunk_size   = 400;
         $base_product = 727783;
         $time         = now();
+        $terms        = $this->option('terms');
         $delta_id     = $this->option('delta');
         if (is_null($delta_id)) {
             $delta_id = MigrationDelta::getDeltaId();
         }
 
-        $this->warn('Checking Terms and Variations');
-        $this->call('variations:create');
+        if ($terms) {
+            $this->warn('Checking Terms and Variations');
+            $this->call('variations:create');
+        }
 
-        $this->info("Load any existing subscription product variations...");
+        $this->info("Loading Existing Products and Variations");
         $wp_product    = $this->wordpress->getProduct($base_product);
         $wp_variations = $this->wordpress->getAllVariations($base_product);
         $legacy_map    = LegacyMap::whereNotNull('legacy_sub')->get()->keyBy('legacy_sub');
