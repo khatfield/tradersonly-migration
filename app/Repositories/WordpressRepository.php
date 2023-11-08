@@ -331,10 +331,9 @@ class WordpressRepository
                         'quantity'     => 1,
                     ],
                 ],
-                'meta_data'  => [
+                'extra_meta'  => [
                     [
-                        'key'   => '_legacy_sub_id',
-                        'value' => $subscription["subscription"]->id,
+                        'legacy_sub_id' => $subscription["subscription"]->id,
                     ],
                 ],
             ];

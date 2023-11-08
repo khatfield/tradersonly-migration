@@ -134,13 +134,13 @@ class MigrateSubscriptions extends Command
         ];
 
         $to_subscriptions->chunk($chunk_size,
-            function($chunk) use ($salesforceRepository, $wp_product, &$wp_variations, &$delta, &$bar, $legacy_map, &$stat_ids)
+            function($chunk) use ($salesforceRepository, $wp_product, &$wp_variations, &$delta, &$bar, $legacy_map, &$stat_ids, $missing_only)
             {
                 $sf_data = $salesforceRepository->getMigrationData(
                     $chunk->pluck("user.sf_id")->unique()
                 );
 
-                $chunk->each(function($subscription) use ($sf_data, $wp_product, &$wp_variations, &$delta, &$bar, &$data, $legacy_map, &$stat_ids)
+                $chunk->each(function($subscription) use ($sf_data, $wp_product, &$wp_variations, &$delta, &$bar, &$data, $legacy_map, &$stat_ids, $missing_only)
                 {
                     /** @var TOSubscription $subscription */
                     $delta = $subscription->id;
@@ -198,8 +198,6 @@ class MigrateSubscriptions extends Command
                         "product"      => $wp_product,
                     ];
 
-                    //effectively set to last id ran in chunk
-
                     $stat_ids['migrated'][] = $subscription->id;
                 });
 
@@ -211,7 +209,9 @@ class MigrateSubscriptions extends Command
                     $this->wordpress->createSubscriptions($data);
                 }
 
-                MigrationDelta::setDeltaId($delta);
+                if(!$missing_only) {
+                    MigrationDelta::setDeltaId($delta);
+                }
 
                 $bar->advance($chunk->count());
             });
