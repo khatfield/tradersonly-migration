@@ -7,9 +7,9 @@ use App\Models\MigrationDelta;
 use App\Models\TOSubscription;
 use App\Repositories\SalesforceRepository;
 use App\Repositories\WordpressRepository;
-use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 
 class MigrateSubscriptions extends Command
@@ -21,7 +21,7 @@ class MigrateSubscriptions extends Command
      */
     protected $signature = 'subscriptions:migrate {--d|delta= : Override the starting delta id}
                                                   {--t|terms : Update products and terms}
-                                                  {--m|missing : Find and process missing}';
+                                                  {--m|missing : Only process missing active subscriptions}';
 
     /**
      * The description of the command.
@@ -54,8 +54,10 @@ class MigrateSubscriptions extends Command
         $missing_only = $this->option('missing');
         $terms        = $this->option('terms');
         $delta_id     = $this->option('delta');
+        $cutoff       = Carbon::parse('2023-10-15 00:00:00');
+
         if (is_null($delta_id)) {
-            if($missing_only) {
+            if ($missing_only) {
                 $delta_id = 0;
             } else {
                 $delta_id = MigrationDelta::getDeltaId();
@@ -66,8 +68,6 @@ class MigrateSubscriptions extends Command
             $this->warn('Checking Terms and Variations');
             $this->call('variations:create');
         }
-
-
 
         $this->info("Loading Existing Products and Variations");
         $wp_product    = $this->wordpress->getProduct($base_product);
@@ -97,21 +97,13 @@ class MigrateSubscriptions extends Command
                           })
                           ->orderBy("id", "ASC");
 
-        if($missing_only) {
-            $migrated_ids = $legacy_map->keys();
-            $legacy_ids   = $to_subscriptions->select('id')->get()->pluck('id');
-
-            $missed = $legacy_ids->diff($migrated_ids);
-            $to_subscriptions = TOSubscription::with([
-                "user",
-                "renewalRatePlan",
-                "invoice",
-                "autoRenew",
-                "invoice.orderCreator",
-                "invoice.payment",
-                "invoice.payment.profile",
-                "invoice.payment.refund",
-            ])->whereIn('id', $missed->toArray());
+        if ($missing_only) {
+            $migrated_ids     = $legacy_map->keys();
+            $legacy_ids       = $to_subscriptions->select('id')
+                                                 ->where('expire_date', '>=', $cutoff)
+                                                 ->get()
+                                                 ->pluck('id');
+            $missed           = $legacy_ids->diff($migrated_ids);
         }
 
         $count = $to_subscriptions->count();
@@ -134,19 +126,19 @@ class MigrateSubscriptions extends Command
         ];
 
         $to_subscriptions->chunk($chunk_size,
-            function($chunk) use ($salesforceRepository, $wp_product, &$wp_variations, &$delta, &$bar, $legacy_map, &$stat_ids, $missing_only)
+            function($chunk) use ($salesforceRepository, $wp_product, &$wp_variations, &$delta, &$bar, $legacy_map, &$stat_ids, $missing_only, $missed)
             {
                 $sf_data = $salesforceRepository->getMigrationData(
                     $chunk->pluck("user.sf_id")->unique()
                 );
 
-                $chunk->each(function($subscription) use ($sf_data, $wp_product, &$wp_variations, &$delta, &$bar, &$data, $legacy_map, &$stat_ids, $missing_only)
+                $chunk->each(function($subscription) use ($sf_data, $wp_product, &$wp_variations, &$delta, &$bar, &$data, $legacy_map, &$stat_ids, $missing_only, $missed)
                 {
                     /** @var TOSubscription $subscription */
                     $delta = $subscription->id;
                     $email = $subscription->user->email;
 
-                    if ($legacy_map->has($subscription->id)) {
+                    if ($legacy_map->has($subscription->id) || ($missing_only && $missed->search($subscription->id) === false)) {
                         //we've already migrated this one ...
                         $stat_ids['skipped'][] = $subscription->id;
 
@@ -160,10 +152,22 @@ class MigrateSubscriptions extends Command
                     }
 
                     if (empty($sf_record)) {
-                        $stat_ids['no_sf'][] = $subscription->id;
-                        Log::info('No SF Data for Sub ID: ' . $subscription->id);
+                        //it's possible that the TO database has the shortened form of the account id ... try something different
+                        if(!empty($sf_id)) {
+                            foreach($sf_data as $acct_id => $record) {
+                                if(str_contains($acct_id, $sf_id)) {
+                                    $sf_record = $record;
+                                    break;
+                                }
+                            }
+                        }
 
-                        return;
+                        if(empty($sf_record)) {
+                            $stat_ids['no_sf'][] = $subscription->id;
+                            Log::info('No SF Data for Sub ID: ' . $subscription->id);
+
+                            return;
+                        }
                     }
 
                     $data[$email]["customer"] = [
@@ -176,15 +180,17 @@ class MigrateSubscriptions extends Command
                     if ($wp_variations->has($key)) {
                         $data[$email]["variation"] = $wp_variations->get($key);
                     }
-
-                    if (Carbon::parse($subscription->expire_date)->isFuture() &&
-                        $subscription->auto_renew &&
-                        !empty($subscription->renewal_plan)) {
-                        $key = $subscription->renewalRatePlan->term . '_month-' . intval($subscription->renewalRatePlan->recurring);
-                        if ($wp_variations->has($key)) {
-                            $data[$email]["subscriptionVariation"] = $wp_variations->get($key);
-                        }
-                    }
+                    /**
+                     * Pretty sure this is causing me some issues ...
+                     * if (Carbon::parse($subscription->expire_date)->isFuture() &&
+                     * $subscription->auto_renew &&
+                     * !empty($subscription->renewal_plan)) {
+                     * $key = $subscription->renewalRatePlan->term . '_month-' . intval($subscription->renewalRatePlan->recurring);
+                     * if ($wp_variations->has($key)) {
+                     * $data[$email]["subscriptionVariation"] = $wp_variations->get($key);
+                     * }
+                     * }
+                     **/
 
                     $data[$email]["order"] = [
                         "subscription" => $subscription,
@@ -209,7 +215,7 @@ class MigrateSubscriptions extends Command
                     $this->wordpress->createSubscriptions($data);
                 }
 
-                if(!$missing_only) {
+                if (!$missing_only) {
                     MigrationDelta::setDeltaId($delta);
                 }
 
