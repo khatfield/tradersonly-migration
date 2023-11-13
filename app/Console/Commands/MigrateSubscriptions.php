@@ -95,15 +95,15 @@ class MigrateSubscriptions extends Command
                           {
                               $query->whereNotNull('paid');
                           })
-                          ->whereHas('user')
                           ->orderBy("id", "ASC");
 
         if ($missing_only) {
+            $to_query     = clone $to_subscriptions;
             $migrated_ids = $legacy_map->keys();
-            $legacy_ids   = $to_subscriptions->select('id')
-                                             ->where('expire_date', '>=', $cutoff)
-                                             ->get()
-                                             ->pluck('id');
+            $legacy_ids   = $to_query->select('id')
+                                     ->where('expire_date', '>=', $cutoff)
+                                     ->get()
+                                     ->pluck('id');
             $missed       = $legacy_ids->diff($migrated_ids);
         }
 
