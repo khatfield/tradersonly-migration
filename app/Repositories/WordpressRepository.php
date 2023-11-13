@@ -282,13 +282,13 @@ class WordpressRepository
             $billingInterval    = $subscription["subscription"]->initial_term;
             $orderTotal         = $subscription["subscription"]->invoice->amount;
             $productVariationId = $record["variation"]->id;
-            if (Carbon::parse($subscription["subscription"]->expire_date)->isFuture() &&
-                !empty($subscription["subscription"]->auto_renew) &&
-                !empty($subscription["subscription"]->renewal_plan)) {
-                $billingInterval    = $subscription["subscription"]->renewalRatePlan->term;
-                $orderTotal         = $subscription["subscription"]->renewalRatePlan->recurring;
-                $productVariationId = $record["subscriptionVariation"]->id;
-            }
+//            if (Carbon::parse($subscription["subscription"]->expire_date)->isFuture() &&
+//                !empty($subscription["subscription"]->auto_renew) &&
+//                !empty($subscription["subscription"]->renewal_plan)) {
+//                $billingInterval    = $subscription["subscription"]->renewalRatePlan->term;
+//                $orderTotal         = $subscription["subscription"]->renewalRatePlan->recurring;
+//                $productVariationId = $record["subscriptionVariation"]->id;
+//            }
 
             $subscriptions[] = [
                 'parent_id'            => $record["order"]->id,
