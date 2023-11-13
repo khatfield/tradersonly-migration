@@ -95,15 +95,16 @@ class MigrateSubscriptions extends Command
                           {
                               $query->whereNotNull('paid');
                           })
+                          ->whereHas('user')
                           ->orderBy("id", "ASC");
 
         if ($missing_only) {
-            $migrated_ids     = $legacy_map->keys();
-            $legacy_ids       = $to_subscriptions->select('id')
-                                                 ->where('expire_date', '>=', $cutoff)
-                                                 ->get()
-                                                 ->pluck('id');
-            $missed           = $legacy_ids->diff($migrated_ids);
+            $migrated_ids = $legacy_map->keys();
+            $legacy_ids   = $to_subscriptions->select('id')
+                                             ->where('expire_date', '>=', $cutoff)
+                                             ->get()
+                                             ->pluck('id');
+            $missed       = $legacy_ids->diff($migrated_ids);
         }
 
         $count = $to_subscriptions->count();
@@ -153,16 +154,16 @@ class MigrateSubscriptions extends Command
 
                     if (empty($sf_record)) {
                         //it's possible that the TO database has the shortened form of the account id ... try something different
-                        if(!empty($sf_id)) {
-                            foreach($sf_data as $acct_id => $record) {
-                                if(str_contains($acct_id, $sf_id)) {
+                        if (!empty($sf_id)) {
+                            foreach ($sf_data as $acct_id => $record) {
+                                if (str_contains($acct_id, $sf_id)) {
                                     $sf_record = $record;
                                     break;
                                 }
                             }
                         }
 
-                        if(empty($sf_record)) {
+                        if (empty($sf_record)) {
                             $stat_ids['no_sf'][] = $subscription->id;
                             Log::info('No SF Data for Sub ID: ' . $subscription->id);
 
