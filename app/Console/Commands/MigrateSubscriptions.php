@@ -9,6 +9,7 @@ use App\Repositories\SalesforceRepository;
 use App\Repositories\WordpressRepository;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Arr;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Log;
 
@@ -21,7 +22,9 @@ class MigrateSubscriptions extends Command
      */
     protected $signature = 'subscriptions:migrate {--d|delta= : Override the starting delta id}
                                                   {--t|terms : Update products and terms}
-                                                  {--m|missing : Only process missing active subscriptions}';
+                                                  {--m|missing : Only process missing active subscriptions}
+                                                  {--f|file= : Process from file of invoice numbers}';
+
 
     /**
      * The description of the command.
@@ -54,7 +57,16 @@ class MigrateSubscriptions extends Command
         $missing_only = $this->option('missing');
         $terms        = $this->option('terms');
         $delta_id     = $this->option('delta');
+        $file         = $this->option('file');
         $cutoff       = Carbon::parse('2023-10-15 00:00:00');
+
+        $invoice_numbers = [];
+        if(!empty($file)) {
+            $filename = storage_path('app/public/' . $file);
+            if(file_exists($filename)) {
+                $invoice_numbers = array_unique(explode("\n", trim(file_get_contents($filename))));
+            }
+        }
 
         if (is_null($delta_id)) {
             if ($missing_only) {
@@ -85,18 +97,28 @@ class MigrateSubscriptions extends Command
                 "invoice.payment",
                 "invoice.payment.profile",
                 "invoice.payment.refund",
-            ])->where("id", ">", $delta_id)
-                          ->where('user_id', '!=', 0)
-                          ->whereNull('deleted')
-                          ->whereHas('user')
-                          ->whereNotNull('start_date')
-                          ->whereNotNull('expire_date')
-                          ->whereHas('invoice', function(Builder $query)
-                          {
-                              $query->whereNotNull('paid');
-                          })
-                          ->orderBy("id", "ASC");
+            ]);
 
+        if(!empty($invoice_numbers)) {
+            $to_subscriptions->whereHas('invoice', function(Builder $query) use ($invoice_numbers)
+            {
+                $query->whereIn('invoice_number', $invoice_numbers);
+            });
+        } else {
+            $to_subscriptions->where("id", ">", $delta_id)
+                             ->where('user_id', '!=', 0)
+                             ->whereNull('deleted')
+                             ->whereHas('user')
+                             ->whereNotNull('start_date')
+                             ->whereNotNull('expire_date')
+                             ->whereHas('invoice', function(Builder $query)
+                             {
+                                 $query->whereNotNull('paid');
+                             })
+                             ->orderBy("id", "ASC");
+        }
+
+        $missed = collect();
         if ($missing_only) {
             $to_query     = clone $to_subscriptions;
             $migrated_ids = $legacy_map->keys();

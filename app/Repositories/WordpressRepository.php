@@ -194,7 +194,9 @@ class WordpressRepository
                 $paid_date = $order["subscription"]->invoice->paid;
             }
 
+            $has_refund = false;
             if (!empty($order['subscription']->invoice->payment) && !empty($order["subscription"]->invoice->payment->refund)) {
+                $has_refund = true;
                 $status = "bulk-refunded";
             } elseif (!empty($order["subscription"]->canceled)) {
                 $status = "cancelled";
@@ -202,12 +204,12 @@ class WordpressRepository
                 $status = "completed";
             }
 
-            $orders[] = [
+            $data = [
                 'payment_method'        => $paymentMethod,
                 'payment_method_title'  => $paymentMethodTitle,
                 'set_paid'              => $paid,
                 'status'                => $status,
-                'order_date'            => Carbon::parse($order["subscription"]->invoice->paid)->unix(),
+                'order_date'            => Carbon::parse($paid_date)->unix(),
                 'order_total'           => $order["subscription"]->invoice->amount,
                 'customer_id'           => $record["customer"]->id,
                 //
@@ -243,6 +245,12 @@ class WordpressRepository
                     ],
                 ],
             ];
+
+            if($has_refund) {
+                $data['refund_amount'] = $order["subscription"]->invoice->payment->refund->amount;
+            }
+
+            $orders[] = $data;
         }
 
         return $this->formatBulkResponse(BulkOrder::create(["orders" => $orders]));
