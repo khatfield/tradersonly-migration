@@ -202,6 +202,8 @@ class MigrateSubscriptions extends Command
                     $key = $subscription->initial_term . '_month-' . intval($subscription->invoice->amount);
                     if ($wp_variations->has($key)) {
                         $data[$email]["variation"] = $wp_variations->get($key);
+                    } else {
+                        Log::error('Variation Key Not Found: ' . $key);
                     }
                     /**
                      * Pretty sure this is causing me some issues ...

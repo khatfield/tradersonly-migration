@@ -172,6 +172,9 @@ class WordpressRepository
     {
         $orders = [];
         foreach ($data as $email => $record) {
+            if(!isset($record['variation'])) {
+                continue;
+            }
 
             $order = $record["order"];
 
