@@ -23,7 +23,8 @@ class MigrateSubscriptions extends Command
     protected $signature = 'subscriptions:migrate {--d|delta= : Override the starting delta id}
                                                   {--t|terms : Update products and terms}
                                                   {--m|missing : Only process missing active subscriptions}
-                                                  {--f|file= : Process from file of invoice numbers}';
+                                                  {--f|file= : Process from file of invoice numbers}
+                                                  {--x|max= : Max Date to Process}';
 
 
     /**
@@ -58,6 +59,7 @@ class MigrateSubscriptions extends Command
         $terms        = $this->option('terms');
         $delta_id     = $this->option('delta');
         $file         = $this->option('file');
+        $max          = $this->option('max');
         $cutoff       = Carbon::parse('2023-10-15 00:00:00');
 
         $invoice_numbers = [];
@@ -111,9 +113,12 @@ class MigrateSubscriptions extends Command
                              ->whereHas('user')
                              ->whereNotNull('start_date')
                              ->whereNotNull('expire_date')
-                             ->whereHas('invoice', function(Builder $query)
+                             ->whereHas('invoice', function(Builder $query) use ($max)
                              {
                                  $query->whereNotNull('paid');
+                                 if(!empty($max)) {
+                                     $query->where('paid', '<=', $max);
+                                 }
                              })
                              ->orderBy("id", "ASC");
         }
