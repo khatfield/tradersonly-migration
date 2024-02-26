@@ -4,6 +4,7 @@ namespace App\Console\Commands;
 
 use App\Models\LegacyMap;
 use App\Models\MigrationDelta;
+use App\Models\TOInvoice;
 use App\Models\TOSubscription;
 use App\Repositories\SalesforceRepository;
 use App\Repositories\WordpressRepository;
@@ -24,7 +25,8 @@ class MigrateSubscriptions extends Command
                                                   {--t|terms : Update products and terms}
                                                   {--m|missing : Only process missing active subscriptions}
                                                   {--f|file= : Process from file of invoice numbers}
-                                                  {--x|max= : Max Date to Process}';
+                                                  {--x|max= : Max Date to Process}
+                                                  {--i|invoice= : A Single Invoice to Migrate}';
 
 
     /**
@@ -60,23 +62,36 @@ class MigrateSubscriptions extends Command
         $delta_id     = $this->option('delta');
         $file         = $this->option('file');
         $max          = $this->option('max');
+        $invoice      = $this->option('invoice');
         $cutoff       = Carbon::parse('2023-10-15 00:00:00');
 
         $invoice_numbers = [];
-        if(!empty($file)) {
-            $filename = storage_path('app/public/' . $file);
-            if(file_exists($filename)) {
-                $invoice_numbers = array_unique(explode("\n", trim(file_get_contents($filename))));
+        if(!empty($invoice)) {
+            $inv = TOInvoice::where('invoice_number', 'like', $invoice)->first();
+            if($inv instanceof TOInvoice) {
+                $invoice_numbers[] = $invoice;
+            } else {
+                $this->error('Invoice Not Found');
+
+                return Command::FAILURE;
+            }
+        } else {
+            if(!empty($file)) {
+                $filename = storage_path('app/public/' . $file);
+                if(file_exists($filename)) {
+                    $invoice_numbers = array_unique(explode("\n", trim(file_get_contents($filename))));
+                }
+            }
+
+            if (is_null($delta_id)) {
+                if ($missing_only) {
+                    $delta_id = 0;
+                } else {
+                    $delta_id = MigrationDelta::getDeltaId();
+                }
             }
         }
 
-        if (is_null($delta_id)) {
-            if ($missing_only) {
-                $delta_id = 0;
-            } else {
-                $delta_id = MigrationDelta::getDeltaId();
-            }
-        }
 
         if ($terms) {
             $this->warn('Checking Terms and Variations');
